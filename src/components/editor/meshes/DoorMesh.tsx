@@ -1,0 +1,153 @@
+import { useMemo, useRef } from 'react';
+import { BoxGeometry, MeshStandardMaterial, Group, Euler } from 'three';
+import { useSelectionStore, useElementStore } from '@/store';
+import type { BimElement } from '@/types/bim';
+
+interface DoorMeshProps {
+  element: BimElement;
+  selected: boolean;
+}
+
+// Material colors
+const FRAME_COLOR = '#8B4513'; // Brown (wood)
+const PANEL_COLOR = '#A0522D'; // Sienna (wood panel)
+const FRAME_COLOR_SELECTED = '#90caf9';
+
+const FRAME_WIDTH = 0.05; // Frame thickness
+const FRAME_DEPTH = 0.04; // Frame depth
+const PANEL_THICKNESS = 0.04; // Door panel thickness
+
+export function DoorMesh({ element, selected }: DoorMeshProps) {
+  const groupRef = useRef<Group>(null);
+  const { select } = useSelectionStore();
+  const { getElement, elements } = useElementStore();
+
+  const { doorData } = element;
+
+  // Find host wall
+  // We subscribe to `elements` to trigger re-renders when elements change
+  const hostWall = useMemo(() => {
+    if (!doorData) return null;
+    return getElement(doorData.hostWallId) ?? null;
+  }, [doorData, elements, getElement]);
+
+  // Calculate world position and rotation from host wall
+  const transform = useMemo(() => {
+    if (!doorData || !hostWall?.wallData) return null;
+
+    const { startPoint, endPoint, thickness } = hostWall.wallData;
+    const { positionOnWall, height } = doorData;
+
+    // Calculate wall direction and length
+    const dx = endPoint.x - startPoint.x;
+    const dy = endPoint.y - startPoint.y;
+    const wallLength = Math.sqrt(dx * dx + dy * dy);
+
+    // Position along wall
+    const x = startPoint.x + dx * positionOnWall;
+    const z = startPoint.y + dy * positionOnWall;
+
+    // Wall angle
+    const angle = Math.atan2(dy, dx);
+
+    return {
+      position: { x, y: height / 2, z },
+      angle,
+      wallThickness: thickness,
+      wallLength,
+    };
+  }, [doorData, hostWall]);
+
+  // Create frame geometry (4 pieces)
+  const frameGeometries = useMemo(() => {
+    if (!doorData) return null;
+
+    const { width, height } = doorData;
+
+    return {
+      // Left vertical frame
+      left: new BoxGeometry(FRAME_WIDTH, height, FRAME_DEPTH),
+      // Right vertical frame
+      right: new BoxGeometry(FRAME_WIDTH, height, FRAME_DEPTH),
+      // Top horizontal frame
+      top: new BoxGeometry(width + FRAME_WIDTH * 2, FRAME_WIDTH, FRAME_DEPTH),
+    };
+  }, [doorData]);
+
+  // Create door panel geometry
+  const panelGeometry = useMemo(() => {
+    if (!doorData) return null;
+    const { width, height } = doorData;
+    // Panel is slightly smaller than frame opening
+    return new BoxGeometry(width - 0.02, height - 0.02, PANEL_THICKNESS);
+  }, [doorData]);
+
+  // Materials
+  const frameMaterial = useMemo(() => {
+    return new MeshStandardMaterial({
+      color: selected ? FRAME_COLOR_SELECTED : FRAME_COLOR,
+      roughness: 0.7,
+      metalness: 0.1,
+    });
+  }, [selected]);
+
+  const panelMaterial = useMemo(() => {
+    return new MeshStandardMaterial({
+      color: selected ? FRAME_COLOR_SELECTED : PANEL_COLOR,
+      roughness: 0.8,
+      metalness: 0.0,
+    });
+  }, [selected]);
+
+  // Handle click
+  const handleClick = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    select(element.id);
+  };
+
+  if (!doorData || !transform || !frameGeometries || !panelGeometry) return null;
+
+  const { width, height } = doorData;
+  const hw = width / 2;
+
+  return (
+    <group
+      ref={groupRef}
+      position={[transform.position.x, 0, transform.position.z]}
+      rotation={new Euler(0, -transform.angle, 0)}
+      onClick={handleClick}
+    >
+      {/* Left frame */}
+      <mesh
+        geometry={frameGeometries.left}
+        material={frameMaterial}
+        position={[-hw - FRAME_WIDTH / 2, height / 2, 0]}
+        castShadow
+      />
+
+      {/* Right frame */}
+      <mesh
+        geometry={frameGeometries.right}
+        material={frameMaterial}
+        position={[hw + FRAME_WIDTH / 2, height / 2, 0]}
+        castShadow
+      />
+
+      {/* Top frame */}
+      <mesh
+        geometry={frameGeometries.top}
+        material={frameMaterial}
+        position={[0, height + FRAME_WIDTH / 2, 0]}
+        castShadow
+      />
+
+      {/* Door panel (slightly offset to show it's a door) */}
+      <mesh
+        geometry={panelGeometry}
+        material={panelMaterial}
+        position={[0, height / 2, PANEL_THICKNESS / 2]}
+        castShadow
+      />
+    </group>
+  );
+}
