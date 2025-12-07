@@ -1,4 +1,4 @@
-# 🗺️ Implementation Plan: Y-up → Z-up Koordinatensystem Migration
+# Implementation Plan: Y-up to Z-up Koordinatensystem Migration
 
 ## Summary
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 📁 File Changes Overview
+## File Changes Overview
 
 | Kategorie | Neue Dateien | Modifizierte Dateien |
 |-----------|--------------|---------------------|
@@ -25,7 +25,7 @@
 
 ---
 
-## 🔢 Implementation Steps
+## Implementation Steps
 
 ### Phase 1: Konstanten & Grundlagen (5 min)
 
@@ -494,7 +494,7 @@ position={[point.x, point.y, 0]}
 
 ---
 
-## 🧪 Test Plan
+## Test Plan
 
 ### Unit Tests
 ```bash
@@ -523,7 +523,7 @@ npm run test:integration
 
 ---
 
-## ⚠️ Risks & Mitigations
+## Risks & Mitigations
 
 ### Risk 1: Komplette 3D-Ansicht funktioniert nicht mehr
 - **Wahrscheinlichkeit**: Mittel
@@ -551,7 +551,7 @@ npm run test:integration
 
 ---
 
-## 🔄 Rollback Plan
+## Rollback Plan
 
 ### Vollständiger Rollback
 ```bash
@@ -577,7 +577,7 @@ git reset --hard [commit-hash]
 
 ---
 
-## ✅ Success Criteria
+## Success Criteria
 
 1. **Visuell**: Alle Elemente stehen/liegen korrekt orientiert
 2. **Interaktion**: Platzieren, Verschieben, Snapping funktionieren
@@ -589,7 +589,7 @@ git reset --hard [commit-hash]
 
 ---
 
-## 📋 Commit-Strategie
+## Commit-Strategie
 
 ```bash
 # Nach jeder Phase:
@@ -609,7 +609,7 @@ git commit -m "refactor(coords): phase 8 - update preview components"
 
 ---
 
-## ⏱️ Geschätzte Gesamtzeit
+## Geschaetzte Gesamtzeit
 
 | Phase | Zeit |
 |-------|------|
@@ -626,6 +626,6 @@ git commit -m "refactor(coords): phase 8 - update preview components"
 
 ---
 
-## 🚀 Start
+## Start
 
 Bereit zur Implementierung. Beginne mit Phase 1.

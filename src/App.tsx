@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { MapPin } from 'lucide-react';
 import { Canvas3D, Toolbar, SlabCompleteDialog, DistanceInputOverlay } from '@/components/editor';
 import { PropertyPanel, HierarchyPanel, DoorParameterPanel, WindowParameterPanel, ColumnParameterPanel, CounterParameterPanel } from '@/components/panels';
 import { useKeyboardShortcuts, useStorageSync } from '@/hooks';
@@ -68,10 +69,10 @@ function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background">
-      {/* Header */}
-      <header className="h-12 border-b flex items-center px-4 shrink-0">
-        <h1 className="text-lg font-bold">CoffeeBIM Editor</h1>
-        <span className="ml-2 text-xs text-muted-foreground">v0.1.0</span>
+      {/* Header - CoffeeBIM Gold Gradient */}
+      <header className="h-12 border-b flex items-center px-4 shrink-0 bg-gradient-to-r from-primary to-secondary">
+        <h1 className="text-lg font-bold text-primary-foreground">CoffeeBIM Editor</h1>
+        <span className="ml-2 text-xs text-primary-foreground/70">v0.1.0</span>
       </header>
 
       {/* Toolbar */}
@@ -118,8 +119,9 @@ function App() {
 
       {/* Status Bar */}
       <footer className="h-6 border-t flex items-center px-4 text-xs text-muted-foreground shrink-0">
-        <span className="font-medium text-foreground">
-          📍 {activeStorey?.name ?? 'Kein Stockwerk'}
+        <span className="font-medium text-foreground flex items-center gap-1">
+          <MapPin size={12} />
+          {activeStorey?.name ?? 'Kein Stockwerk'}
         </span>
         <span className="mx-2">|</span>
         <span>{toolStatus}</span>

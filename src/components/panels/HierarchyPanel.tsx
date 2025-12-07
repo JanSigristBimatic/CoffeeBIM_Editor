@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Building2, Layers, Box, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Building2, Layers, Box, Plus, Trash2, MapPin, LayoutGrid, DoorOpen, Columns, Square, Armchair } from 'lucide-react';
 import { useState } from 'react';
 import { useProjectStore, useElementStore, useSelectionStore, useViewStore } from '@/store';
 import { cn } from '@/lib/utils';
@@ -75,7 +75,7 @@ export function HierarchyPanel() {
 
         {/* Site */}
         <div className="flex items-center gap-2 py-1 pl-4">
-          <span className="text-muted-foreground">📍</span>
+          <MapPin size={14} className="text-muted-foreground" />
           <span>{site.name}</span>
         </div>
 
@@ -200,17 +200,17 @@ function ElementItem({ element, isSelected, onSelect, onDoubleClick }: ElementIt
   const getIcon = () => {
     switch (element.type) {
       case 'wall':
-        return '🧱';
+        return <LayoutGrid size={12} />;
       case 'door':
-        return '🚪';
+        return <DoorOpen size={12} />;
       case 'window':
-        return '🪟';
+        return <Square size={12} />;
       case 'column':
-        return '🏛️';
+        return <Columns size={12} />;
       case 'slab':
-        return '⬜';
+        return <Square size={12} />;
       case 'furniture':
-        return '🪑';
+        return <Armchair size={12} />;
       default:
         return <Box size={12} />;
     }

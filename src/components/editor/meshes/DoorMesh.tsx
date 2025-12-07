@@ -110,53 +110,61 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
   // Frame geometries are created in XY plane (X=width, Y=height)
   // Rotate +90° around X so Y (height) → Z (up), then rotate around Z for wall angle
   return (
-    <group
-      ref={groupRef}
-      position={[transform.position.x, transform.position.y, 0]}
-      rotation={new Euler(Math.PI / 2, 0, transform.angle, 'ZXY')}
-      {...handlers}
-    >
-      {/* Left frame - in local coords: X is along wall, Y is height (becomes Z after rotation) */}
-      <mesh
-        geometry={frameGeometries.left}
-        material={frameMaterial}
-        position={[-hw - FRAME_WIDTH / 2, height / 2, 0]}
-        castShadow
-      />
+    <>
+      {/* Door frame and panel group (rotated to stand up) */}
+      <group
+        ref={groupRef}
+        position={[transform.position.x, transform.position.y, 0]}
+        rotation={new Euler(Math.PI / 2, 0, transform.angle, 'ZXY')}
+        {...handlers}
+      >
+        {/* Left frame - in local coords: X is along wall, Y is height (becomes Z after rotation) */}
+        <mesh
+          geometry={frameGeometries.left}
+          material={frameMaterial}
+          position={[-hw - FRAME_WIDTH / 2, height / 2, 0]}
+          castShadow
+        />
 
-      {/* Right frame */}
-      <mesh
-        geometry={frameGeometries.right}
-        material={frameMaterial}
-        position={[hw + FRAME_WIDTH / 2, height / 2, 0]}
-        castShadow
-      />
+        {/* Right frame */}
+        <mesh
+          geometry={frameGeometries.right}
+          material={frameMaterial}
+          position={[hw + FRAME_WIDTH / 2, height / 2, 0]}
+          castShadow
+        />
 
-      {/* Top frame */}
-      <mesh
-        geometry={frameGeometries.top}
-        material={frameMaterial}
-        position={[0, height + FRAME_WIDTH / 2, 0]}
-        castShadow
-      />
+        {/* Top frame */}
+        <mesh
+          geometry={frameGeometries.top}
+          material={frameMaterial}
+          position={[0, height + FRAME_WIDTH / 2, 0]}
+          castShadow
+        />
 
-      {/* Door panel (slightly offset to show it's a door) */}
-      <mesh
-        geometry={panelGeometry}
-        material={panelMaterial}
-        position={[0, height / 2, PANEL_THICKNESS / 2]}
-        castShadow
-      />
+        {/* Door panel (slightly offset to show it's a door) */}
+        <mesh
+          geometry={panelGeometry}
+          material={panelMaterial}
+          position={[0, height / 2, PANEL_THICKNESS / 2]}
+          castShadow
+        />
+      </group>
 
-      {/* Door swing arc - architectural floor plan convention (Z-up) */}
-      <DoorSwingArc
-        doorWidth={width}
-        doorType={doorData.doorType}
-        swingDirection={doorData.swingDirection}
-        swingSide={doorData.swingSide}
-        selected={selected}
-        zOffset={0.02}
-      />
-    </group>
+      {/* Door swing arc - separate group with only Z rotation (lies flat on ground) */}
+      <group
+        position={[transform.position.x, transform.position.y, 0]}
+        rotation={new Euler(0, 0, transform.angle)}
+      >
+        <DoorSwingArc
+          doorWidth={width}
+          doorType={doorData.doorType}
+          swingDirection={doorData.swingDirection}
+          swingSide={doorData.swingSide}
+          selected={selected}
+          zOffset={0.02}
+        />
+      </group>
+    </>
   );
 }
