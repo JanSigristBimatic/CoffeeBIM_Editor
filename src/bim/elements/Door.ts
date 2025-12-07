@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { BimElement, DoorData, DoorType, Opening } from '@/types/bim';
+import type { BimElement, DoorData, DoorType, DoorSwingSide, Opening } from '@/types/bim';
 import {
   DEFAULT_DOOR_WIDTH,
   DEFAULT_DOUBLE_DOOR_WIDTH,
@@ -18,6 +18,8 @@ export interface CreateDoorParams {
   width?: number;
   height?: number;
   swingDirection?: 'left' | 'right';
+  /** Whether door swings inward or outward (default: inward) */
+  swingSide?: DoorSwingSide;
   name?: string;
   /** Height from floor to bottom of door (default 0) */
   sillHeight?: number;
@@ -42,17 +44,29 @@ export function getDefaultDoorWidth(doorType: DoorType): number {
 /**
  * Get operation type string for IFC based on door type
  */
-function getOperationType(doorType: DoorType, swingDirection: 'left' | 'right'): string {
+function getOperationType(
+  doorType: DoorType,
+  swingDirection: 'left' | 'right',
+  swingSide: DoorSwingSide
+): string {
+  const sidePrefix = swingSide === 'outward' ? 'outward_' : '';
   switch (doorType) {
     case 'single':
-      return swingDirection === 'left' ? 'single_swing_left' : 'single_swing_right';
+      return `${sidePrefix}single_swing_${swingDirection}`;
     case 'double':
-      return 'double_swing';
+      return `${sidePrefix}double_swing`;
     case 'sliding':
       return 'sliding';
     default:
-      return 'single_swing_left';
+      return `${sidePrefix}single_swing_left`;
   }
+}
+
+/**
+ * Get swing side label for display
+ */
+export function getSwingSideLabel(swingSide: DoorSwingSide): string {
+  return swingSide === 'inward' ? 'Innen' : 'Außen';
 }
 
 /**
@@ -126,6 +140,7 @@ export function createDoor(params: CreateDoorParams): BimElement {
     width,
     height = DEFAULT_DOOR_HEIGHT,
     swingDirection = 'left',
+    swingSide = 'inward',
     name,
     sillHeight = 0,
   } = params;
@@ -155,6 +170,7 @@ export function createDoor(params: CreateDoorParams): BimElement {
     hostWallId,
     positionOnWall,
     swingDirection,
+    swingSide,
     distanceFromLeft,
     distanceFromRight,
     sillHeight,
@@ -186,8 +202,9 @@ export function createDoor(params: CreateDoorParams): BimElement {
         properties: {
           IsExternal: false,
           FireRating: 'none',
-          OperationType: getOperationType(doorType, swingDirection),
+          OperationType: getOperationType(doorType, swingDirection, swingSide),
           DoorType: doorType,
+          SwingSide: swingSide,
         },
       },
     ],
@@ -244,11 +261,12 @@ export function calculateDoorWorldPosition(
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
 
+  // Z-up coordinate system: 2D (x,y) → 3D (x, y, 0)
   const x = startPoint.x + dx * positionOnWall;
-  const z = startPoint.y + dy * positionOnWall; // Note: 2D y maps to 3D z
+  const y = startPoint.y + dy * positionOnWall;
 
   // Calculate wall angle
   const angle = Math.atan2(dy, dx);
 
-  return { x, y: 0, z, angle };
+  return { x, y, z: 0, angle };
 }

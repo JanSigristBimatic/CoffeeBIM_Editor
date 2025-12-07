@@ -35,10 +35,10 @@ export async function loadPdfFile(file: File): Promise<PdfDocument> {
 
   // Render PDF page to canvas
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await page.render({
+  await (page.render as any)({
     canvasContext: context,
     viewport: viewport,
-  } as any).promise;
+  }).promise;
 
   // Convert to data URL
   const imageDataUrl = canvas.toDataURL('image/png');
@@ -80,10 +80,10 @@ export async function loadPdfPage(
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await page.render({
+  await (page.render as any)({
     canvasContext: context,
     viewport: viewport,
-  } as any).promise;
+  }).promise;
 
   const imageDataUrl = canvas.toDataURL('image/png');
 

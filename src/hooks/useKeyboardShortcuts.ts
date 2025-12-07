@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useToolStore, useSelectionStore, useElementStore, useViewStore, usePdfUnderlayStore } from '@/store';
 import type { ToolType } from '@/types/tools';
+import { useHistory } from './useHistory';
 
 /**
  * Global keyboard shortcuts for the editor
@@ -9,8 +10,9 @@ export function useKeyboardShortcuts() {
   const { setActiveTool, cancelCurrentOperation } = useToolStore();
   const { getSelectedIds, clearSelection } = useSelectionStore();
   const { removeElements } = useElementStore();
-  const { toggleGrid, toggleViewMode } = useViewStore();
+  const { toggleGrid, toggleViewMode, toggleSnapOrthogonal } = useViewStore();
   const { isLoaded: hasPdf, toggleVisible: togglePdfVisible } = usePdfUnderlayStore();
+  const { undo, redo, canUndo, canRedo } = useHistory();
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -28,7 +30,7 @@ export function useKeyboardShortcuts() {
       const ctrl = event.ctrlKey || event.metaKey;
       const shift = event.shiftKey;
 
-      // Tool shortcuts (no modifiers) - German-friendly: A=Auswahl, W=Wand, T=Tür, F=Fenster, S=Säule, B=Boden
+      // Tool shortcuts (no modifiers) - German-friendly: A=Auswahl, W=Wand, T=Tür, F=Fenster, S=Säule, B=Boden, K=Theke
       if (!ctrl && !shift) {
         const toolShortcuts: Record<string, ToolType> = {
           a: 'select',    // Auswahl
@@ -37,6 +39,7 @@ export function useKeyboardShortcuts() {
           f: 'window',    // Fenster
           s: 'column',    // Säule
           b: 'slab',      // Boden
+          k: 'counter',   // Theke/Tresen
         };
 
         const tool = toolShortcuts[event.key.toLowerCase()];
@@ -47,19 +50,16 @@ export function useKeyboardShortcuts() {
         }
       }
 
-      // Escape - cancel current operation and return to select mode for door/window
+      // Escape - cancel current operation and return to select mode
       if (event.key === 'Escape') {
         event.preventDefault();
         const { activeTool } = useToolStore.getState();
 
-        // For door and window tools, ESC returns to select mode
-        if (activeTool === 'door' || activeTool === 'window') {
+        // If not already in select mode, cancel operation and switch to select
+        if (activeTool !== 'select') {
+          cancelCurrentOperation();
           setActiveTool('select');
-          return;
         }
-
-        // For other tools, cancel the current operation
-        cancelCurrentOperation();
         clearSelection();
         return;
       }
@@ -82,6 +82,13 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      // O - toggle orthogonal mode
+      if (event.key.toLowerCase() === 'o' && !ctrl) {
+        event.preventDefault();
+        toggleSnapOrthogonal();
+        return;
+      }
+
       // P - toggle PDF underlay visibility
       if (event.key.toLowerCase() === 'p' && !ctrl && hasPdf) {
         event.preventDefault();
@@ -96,9 +103,25 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      // Ctrl+Z - undo
+      if (ctrl && !shift && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (canUndo) {
+          undo();
+        }
+        return;
+      }
+
+      // Ctrl+Y or Ctrl+Shift+Z - redo
+      if ((ctrl && event.key.toLowerCase() === 'y') || (ctrl && shift && event.key.toLowerCase() === 'z')) {
+        event.preventDefault();
+        if (canRedo) {
+          redo();
+        }
+        return;
+      }
+
       // Ctrl+A - select all (TODO: implement)
-      // Ctrl+Z - undo (TODO: implement)
-      // Ctrl+Y - redo (TODO: implement)
       // Ctrl+E - export (TODO: implement)
     };
 
@@ -115,7 +138,12 @@ export function useKeyboardShortcuts() {
     removeElements,
     toggleGrid,
     toggleViewMode,
+    toggleSnapOrthogonal,
     hasPdf,
     togglePdfVisible,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   ]);
 }

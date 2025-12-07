@@ -30,3 +30,16 @@ export {
   updateOpeningFromElement,
   getHostWallId,
 } from './OpeningCalculations';
+export {
+  createFurniture,
+  updateFurnitureDimensions,
+  updateFurnitureScale,
+  updateFurniturePosition,
+  getModelFormatFromExtension,
+  isSupportedModelFormat,
+  DEFAULT_FURNITURE_WIDTH,
+  DEFAULT_FURNITURE_DEPTH,
+  DEFAULT_FURNITURE_HEIGHT,
+  DEFAULT_FURNITURE_SCALE,
+} from './Furniture';
+export type { CreateFurnitureParams, FurnitureCategory } from './Furniture';

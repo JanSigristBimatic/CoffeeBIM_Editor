@@ -11,4 +11,16 @@ export {
   angleBetweenPoints,
   normalizeAngle,
   anglesEqual,
+  // Extended snap functions
+  getMidpoint,
+  getSegmentLength,
+  getSegmentDirection,
+  nearestPointOnSegment,
+  perpendicularToSegment,
+  snapPointAdvanced,
+  getSnapCandidates,
+  // Element utilities
+  getElementCenter,
 } from './math';
+
+export type { SnapCandidate } from './math';

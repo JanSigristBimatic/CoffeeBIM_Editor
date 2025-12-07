@@ -1,7 +1,9 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import type { ProjectInfo, SiteInfo, BuildingInfo, StoreyInfo } from '@/types/bim';
 import { DEFAULT_STOREY_HEIGHT } from '@/types/bim';
+import { createIndexedDBStorage } from '@/lib/storage';
 
 interface ProjectState {
   project: ProjectInfo;
@@ -68,83 +70,101 @@ function createDefaultProject(): ProjectState {
   };
 }
 
-export const useProjectStore = create<ProjectState & ProjectActions>((set, get) => ({
-  ...createDefaultProject(),
+export const useProjectStore = create<ProjectState & ProjectActions>()(
+  persist(
+    (set, get) => ({
+      ...createDefaultProject(),
 
-  // Project actions
-  setProjectName: (name) =>
-    set((state) => ({
-      project: { ...state.project, name },
-    })),
+      // Project actions
+      setProjectName: (name) =>
+        set((state) => ({
+          project: { ...state.project, name },
+        })),
 
-  setProjectDescription: (description) =>
-    set((state) => ({
-      project: { ...state.project, description },
-    })),
+      setProjectDescription: (description) =>
+        set((state) => ({
+          project: { ...state.project, description },
+        })),
 
-  // Site actions
-  setSiteName: (name) =>
-    set((state) => ({
-      site: { ...state.site, name },
-    })),
+      // Site actions
+      setSiteName: (name) =>
+        set((state) => ({
+          site: { ...state.site, name },
+        })),
 
-  setSiteAddress: (address) =>
-    set((state) => ({
-      site: { ...state.site, address },
-    })),
+      setSiteAddress: (address) =>
+        set((state) => ({
+          site: { ...state.site, address },
+        })),
 
-  // Building actions
-  setBuildingName: (name) =>
-    set((state) => ({
-      building: { ...state.building, name },
-    })),
+      // Building actions
+      setBuildingName: (name) =>
+        set((state) => ({
+          building: { ...state.building, name },
+        })),
 
-  // Storey actions
-  addStorey: (name, elevation, height = DEFAULT_STOREY_HEIGHT) => {
-    const id = uuidv4();
-    const { building } = get();
+      // Storey actions
+      addStorey: (name, elevation, height = DEFAULT_STOREY_HEIGHT) => {
+        const id = uuidv4();
+        const { building } = get();
 
-    set((state) => ({
-      storeys: [
-        ...state.storeys,
-        {
-          id,
-          name,
-          buildingId: building.id,
-          elevation,
-          height,
-        },
-      ],
-    }));
+        set((state) => ({
+          storeys: [
+            ...state.storeys,
+            {
+              id,
+              name,
+              buildingId: building.id,
+              elevation,
+              height,
+            },
+          ],
+        }));
 
-    return id;
-  },
+        return id;
+      },
 
-  updateStorey: (id, updates) =>
-    set((state) => ({
-      storeys: state.storeys.map((storey) =>
-        storey.id === id ? { ...storey, ...updates } : storey
-      ),
-    })),
+      updateStorey: (id, updates) =>
+        set((state) => ({
+          storeys: state.storeys.map((storey) =>
+            storey.id === id ? { ...storey, ...updates } : storey
+          ),
+        })),
 
-  removeStorey: (id) =>
-    set((state) => {
-      const filteredStoreys = state.storeys.filter((s) => s.id !== id);
+      removeStorey: (id) =>
+        set((state) => {
+          const filteredStoreys = state.storeys.filter((s) => s.id !== id);
 
-      // If we removed the active storey, select another one
-      let newActiveStoreyId = state.activeStoreyId;
-      if (state.activeStoreyId === id) {
-        newActiveStoreyId = filteredStoreys[0]?.id ?? null;
-      }
+          // If we removed the active storey, select another one
+          let newActiveStoreyId = state.activeStoreyId;
+          if (state.activeStoreyId === id) {
+            newActiveStoreyId = filteredStoreys[0]?.id ?? null;
+          }
 
-      return {
-        storeys: filteredStoreys,
-        activeStoreyId: newActiveStoreyId,
-      };
+          return {
+            storeys: filteredStoreys,
+            activeStoreyId: newActiveStoreyId,
+          };
+        }),
+
+      setActiveStorey: (id) => set({ activeStoreyId: id }),
+
+      // Utility
+      resetProject: () => set(createDefaultProject()),
     }),
-
-  setActiveStorey: (id) => set({ activeStoreyId: id }),
-
-  // Utility
-  resetProject: () => set(createDefaultProject()),
-}));
+    {
+      name: 'coffeebim-project',
+      storage: createIndexedDBStorage<ProjectState>(),
+      onRehydrateStorage: () => {
+        console.log('[CoffeeBIM] Starte Projekt-Hydration...');
+        return (state, error) => {
+          if (error) {
+            console.error('[CoffeeBIM] Projekt-Hydration Fehler:', error);
+          } else {
+            console.log('[CoffeeBIM] Projekt-Hydration fertig, activeStoreyId:', state?.activeStoreyId);
+          }
+        };
+      },
+    }
+  )
+);

@@ -1,14 +1,24 @@
-import { Canvas3D, Toolbar, SlabCompleteDialog } from '@/components/editor';
-import { PropertyPanel, HierarchyPanel, DoorParameterPanel, WindowParameterPanel } from '@/components/panels';
-import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useEffect } from 'react';
+import { Canvas3D, Toolbar, SlabCompleteDialog, DistanceInputOverlay } from '@/components/editor';
+import { PropertyPanel, HierarchyPanel, DoorParameterPanel, WindowParameterPanel, ColumnParameterPanel, CounterParameterPanel } from '@/components/panels';
+import { useKeyboardShortcuts, useStorageSync } from '@/hooks';
 import { useViewStore, useToolStore, useProjectStore } from '@/store';
+import { requestPersistentStorage } from '@/lib/storage';
 
 function App() {
   // Global keyboard shortcuts
   useKeyboardShortcuts();
 
+  // Sync storage after hydration (migrate orphaned elements to current storey)
+  useStorageSync();
+
+  // Request persistent storage on app start (prevents browser from auto-deleting data)
+  useEffect(() => {
+    requestPersistentStorage();
+  }, []);
+
   const { viewMode } = useViewStore();
-  const { activeTool, wallPlacement, slabPlacement } = useToolStore();
+  const { activeTool, wallPlacement, slabPlacement, counterPlacement, distanceInput } = useToolStore();
   const { storeys, activeStoreyId } = useProjectStore();
 
   // Get active storey name
@@ -17,21 +27,40 @@ function App() {
   // Status bar text based on active tool
   const getToolStatus = () => {
     if (activeTool === 'wall') {
-      return wallPlacement.startPoint
-        ? 'Klicken Sie, um den Endpunkt zu setzen'
-        : 'Klicken Sie, um den Startpunkt zu setzen';
+      if (wallPlacement.startPoint) {
+        if (distanceInput.active) {
+          return `Distanz: ${distanceInput.value}m – Enter zum Bestätigen`;
+        }
+        return 'Klicken oder Distanz eingeben (z.B. 3.5 + Enter)';
+      }
+      return 'Klicken Sie, um den Startpunkt zu setzen';
     }
     if (activeTool === 'slab') {
       if (slabPlacement.points.length === 0) {
         return 'Klicken Sie, um den ersten Punkt zu setzen';
       }
-      return `${slabPlacement.points.length} Punkte – Doppelklick oder nahe Start klicken zum Schliessen`;
+      if (distanceInput.active) {
+        return `Distanz: ${distanceInput.value}m – Enter zum Bestätigen`;
+      }
+      return `${slabPlacement.points.length} Punkte – Distanz eingeben oder klicken`;
     }
     if (activeTool === 'door') {
       return 'Auf Wand klicken, um Tür zu platzieren';
     }
     if (activeTool === 'window') {
       return 'Auf Wand klicken, um Fenster zu platzieren';
+    }
+    if (activeTool === 'column') {
+      return 'Klicken, um Säule zu platzieren';
+    }
+    if (activeTool === 'counter') {
+      if (counterPlacement.points.length === 0) {
+        return 'Klicken, um Frontlinie zu zeichnen';
+      }
+      if (distanceInput.active) {
+        return `Distanz: ${distanceInput.value}m – Enter zum Bestätigen`;
+      }
+      return `${counterPlacement.points.length} Punkte – Distanz eingeben oder Rechtsklick`;
     }
     return 'Bereit';
   };
@@ -69,6 +98,16 @@ function App() {
 
           {/* Window Parameter Panel (floating, shows when window tool active) */}
           <WindowParameterPanel />
+
+          {/* Column Parameter Panel (floating, shows when column tool active) */}
+          <ColumnParameterPanel />
+
+          {/* Counter Parameter Panel (floating, shows when counter tool active) */}
+          {activeTool === 'counter' && (
+            <div className="absolute top-4 right-4 w-64 bg-card border rounded-lg shadow-lg">
+              <CounterParameterPanel />
+            </div>
+          )}
         </main>
 
         {/* Right Panel - Properties */}
@@ -89,12 +128,15 @@ function App() {
         <span className="mx-2">|</span>
         <span className="capitalize">{activeTool}</span>
         <span className="ml-auto">
-          A = Auswahl, W = Wand, T = Tür, F = Fenster, S = Säule, B = Boden, G = Raster, Esc = Abbrechen
+          A = Auswahl, W = Wand, T = Tür, F = Fenster, S = Säule, B = Boden, K = Theke, G = Raster, Esc = Abbrechen
         </span>
       </footer>
 
       {/* Dialogs */}
       <SlabCompleteDialog />
+
+      {/* Distance Input Overlay */}
+      <DistanceInputOverlay />
     </div>
   );
 }

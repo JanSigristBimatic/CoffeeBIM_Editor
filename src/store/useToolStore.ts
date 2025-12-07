@@ -8,10 +8,19 @@ import type {
   DoorPlacementParams,
   WindowPlacementState,
   WindowPlacementParams,
+  ColumnPlacementState,
+  ColumnPlacementParams,
+  ColumnProfileType,
+  CounterPlacementState,
+  CounterPlacementParams,
+  AssetPlacementState,
+  AssetPlacementParams,
   CursorStyle,
+  DistanceInputState,
 } from '@/types/tools';
+import type { Vector2D } from '@/types/geometry';
 import type { Point2D } from '@/types/geometry';
-import type { DoorType, WindowType } from '@/types/bim';
+import type { DoorType, WindowType, CounterType } from '@/types/bim';
 import {
   DEFAULT_DOOR_WIDTH,
   DEFAULT_DOOR_HEIGHT,
@@ -20,20 +29,51 @@ import {
   DEFAULT_FIXED_WINDOW_WIDTH,
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_SILL_HEIGHT,
+  DEFAULT_COLUMN_WIDTH,
+  DEFAULT_COLUMN_DEPTH,
+  DEFAULT_WALL_HEIGHT,
+  DEFAULT_COUNTER_DEPTH,
+  DEFAULT_COUNTER_HEIGHT,
+  DEFAULT_BAR_COUNTER_HEIGHT,
+  DEFAULT_COUNTER_TOP_THICKNESS,
+  DEFAULT_COUNTER_OVERHANG,
+  DEFAULT_COUNTER_KICK_HEIGHT,
+  DEFAULT_COUNTER_KICK_RECESS,
+  DEFAULT_COUNTER_FOOTREST_HEIGHT,
 } from '@/types/bim';
 
 interface ToolState {
   activeTool: ToolType;
+  /** Global cursor position for snap preview (independent of placement state) */
+  cursorPosition: Point2D | null;
+  /** Distance input state for line-based element placement */
+  distanceInput: DistanceInputState;
   wallPlacement: WallPlacementState;
   slabPlacement: SlabPlacementState;
   slabCompletionDialog: SlabCompletionDialogState;
   doorPlacement: DoorPlacementState;
   windowPlacement: WindowPlacementState;
+  columnPlacement: ColumnPlacementState;
+  counterPlacement: CounterPlacementState;
+  assetPlacement: AssetPlacementState;
 }
 
 interface ToolActions {
   // Tool selection
   setActiveTool: (tool: ToolType) => void;
+
+  // Cursor tracking (for snap preview)
+  setCursorPosition: (point: Point2D | null) => void;
+
+  // Distance input (for line-based elements)
+  setDistanceInputActive: (active: boolean) => void;
+  updateDistanceInputValue: (value: string) => void;
+  setDistanceDirection: (direction: Vector2D | null) => void;
+  setDistanceReferencePoint: (point: Point2D | null) => void;
+  appendDistanceInputDigit: (digit: string) => void;
+  clearDistanceInput: () => void;
+  /** Get the target point based on current distance input and direction */
+  getDistanceTargetPoint: () => Point2D | null;
 
   // Wall placement
   setWallStartPoint: (point: Point2D | null) => void;
@@ -82,10 +122,44 @@ interface ToolActions {
   ) => void;
   resetWindowPlacement: () => void;
 
+  // Column placement
+  setColumnParams: (params: Partial<ColumnPlacementParams>) => void;
+  setColumnProfileType: (profileType: ColumnProfileType) => void;
+  setColumnWidth: (width: number) => void;
+  setColumnDepth: (depth: number) => void;
+  setColumnHeight: (height: number) => void;
+  setColumnPreview: (position: Point2D | null, isValid: boolean) => void;
+  resetColumnPlacement: () => void;
+
+  // Counter placement
+  setCounterParams: (params: Partial<CounterPlacementParams>) => void;
+  setCounterType: (counterType: CounterType) => void;
+  setCounterDepth: (depth: number) => void;
+  setCounterHeight: (height: number) => void;
+  addCounterPoint: (point: Point2D) => void;
+  setCounterPreviewPoint: (point: Point2D | null) => void;
+  resetCounterPlacement: () => void;
+  finishCounterPlacement: () => Point2D[];
+
+  // Asset placement
+  setAssetParams: (params: Partial<AssetPlacementParams>) => void;
+  setSelectedAsset: (assetId: string | null) => void;
+  setAssetScale: (scale: number) => void;
+  setAssetRotation: (rotation: number) => void;
+  setAssetPreview: (position: Point2D | null, isValid: boolean) => void;
+  resetAssetPlacement: () => void;
+
   // Utility
   getCursorStyle: () => CursorStyle;
   cancelCurrentOperation: () => void;
 }
+
+const initialDistanceInput: DistanceInputState = {
+  active: false,
+  value: '',
+  direction: null,
+  referencePoint: null,
+};
 
 const initialWallPlacement: WallPlacementState = {
   startPoint: null,
@@ -152,19 +226,98 @@ const initialWindowPlacement: WindowPlacementState = {
   isValidPosition: false,
 };
 
+const initialColumnPlacementParams: ColumnPlacementParams = {
+  profileType: 'rectangular',
+  width: DEFAULT_COLUMN_WIDTH,
+  depth: DEFAULT_COLUMN_DEPTH,
+  height: DEFAULT_WALL_HEIGHT,
+};
+
+const initialColumnPlacement: ColumnPlacementState = {
+  params: initialColumnPlacementParams,
+  previewPosition: null,
+  isValidPosition: true, // Columns can be placed anywhere on the grid
+};
+
+/**
+ * Get default height based on counter type
+ */
+function getDefaultCounterHeight(counterType: CounterType): number {
+  switch (counterType) {
+    case 'bar':
+      return DEFAULT_BAR_COUNTER_HEIGHT;
+    case 'standard':
+    case 'service':
+    default:
+      return DEFAULT_COUNTER_HEIGHT;
+  }
+}
+
+/**
+ * Get default overhang based on counter type
+ */
+function getDefaultCounterOverhang(counterType: CounterType): number {
+  switch (counterType) {
+    case 'bar':
+      return 0.3; // 30cm for bar seating
+    case 'service':
+      return 0; // No overhang for service counters
+    default:
+      return DEFAULT_COUNTER_OVERHANG;
+  }
+}
+
+const initialCounterPlacementParams: CounterPlacementParams = {
+  counterType: 'standard',
+  depth: DEFAULT_COUNTER_DEPTH,
+  height: DEFAULT_COUNTER_HEIGHT,
+  topThickness: DEFAULT_COUNTER_TOP_THICKNESS,
+  overhang: DEFAULT_COUNTER_OVERHANG,
+  kickHeight: DEFAULT_COUNTER_KICK_HEIGHT,
+  kickRecess: DEFAULT_COUNTER_KICK_RECESS,
+  hasFootrest: false,
+  footrestHeight: DEFAULT_COUNTER_FOOTREST_HEIGHT,
+};
+
+const initialCounterPlacement: CounterPlacementState = {
+  params: initialCounterPlacementParams,
+  points: [],
+  previewPoint: null,
+  isDrawing: false,
+};
+
+const initialAssetPlacementParams: AssetPlacementParams = {
+  assetId: null,
+  scale: 1.0,
+  rotation: 0,
+};
+
+const initialAssetPlacement: AssetPlacementState = {
+  params: initialAssetPlacementParams,
+  previewPosition: null,
+  isValidPosition: true,
+};
+
 export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
   activeTool: 'select',
+  cursorPosition: null,
+  distanceInput: initialDistanceInput,
   wallPlacement: initialWallPlacement,
   slabPlacement: initialSlabPlacement,
   slabCompletionDialog: initialSlabCompletionDialog,
   doorPlacement: initialDoorPlacement,
   windowPlacement: initialWindowPlacement,
+  columnPlacement: initialColumnPlacement,
+  counterPlacement: initialCounterPlacement,
+  assetPlacement: initialAssetPlacement,
 
   // Tool selection
   setActiveTool: (tool) =>
     set({
       activeTool: tool,
-      // Reset placement state when changing tools
+      cursorPosition: null,
+      // Reset distance input and placement state when changing tools
+      distanceInput: initialDistanceInput,
       wallPlacement: initialWallPlacement,
       slabPlacement: initialSlabPlacement,
       doorPlacement: {
@@ -177,7 +330,105 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
         // Keep window params when switching tools
         params: get().windowPlacement.params,
       },
+      columnPlacement: {
+        ...initialColumnPlacement,
+        // Keep column params when switching tools
+        params: get().columnPlacement.params,
+      },
+      counterPlacement: {
+        ...initialCounterPlacement,
+        // Keep counter params when switching tools
+        params: get().counterPlacement.params,
+      },
+      assetPlacement: {
+        ...initialAssetPlacement,
+        // Keep asset params when switching tools
+        params: get().assetPlacement.params,
+      },
     }),
+
+  // Cursor tracking (for snap preview before first point is placed)
+  setCursorPosition: (point) => set({ cursorPosition: point }),
+
+  // Distance input actions
+  setDistanceInputActive: (active) =>
+    set((state) => ({
+      distanceInput: {
+        ...state.distanceInput,
+        active,
+      },
+    })),
+
+  updateDistanceInputValue: (value) =>
+    set((state) => ({
+      distanceInput: {
+        ...state.distanceInput,
+        value,
+        active: value.length > 0,
+      },
+    })),
+
+  setDistanceDirection: (direction) =>
+    set((state) => ({
+      distanceInput: {
+        ...state.distanceInput,
+        direction,
+      },
+    })),
+
+  setDistanceReferencePoint: (point) =>
+    set((state) => ({
+      distanceInput: {
+        ...state.distanceInput,
+        referencePoint: point,
+      },
+    })),
+
+  appendDistanceInputDigit: (digit) =>
+    set((state) => {
+      // Only allow valid input: digits, one decimal point
+      const currentValue = state.distanceInput.value;
+
+      // Prevent multiple decimal points
+      if (digit === '.' && currentValue.includes('.')) {
+        return state;
+      }
+
+      // Only allow digits and decimal point
+      if (!/^[0-9.]$/.test(digit)) {
+        return state;
+      }
+
+      const newValue = currentValue + digit;
+      return {
+        distanceInput: {
+          ...state.distanceInput,
+          value: newValue,
+          active: true,
+        },
+      };
+    }),
+
+  clearDistanceInput: () => set({ distanceInput: initialDistanceInput }),
+
+  getDistanceTargetPoint: () => {
+    const { distanceInput } = get();
+    const { value, direction, referencePoint } = distanceInput;
+
+    if (!referencePoint || !direction || !value) {
+      return null;
+    }
+
+    const distance = parseFloat(value);
+    if (isNaN(distance) || distance <= 0) {
+      return null;
+    }
+
+    return {
+      x: referencePoint.x + direction.x * distance,
+      y: referencePoint.y + direction.y * distance,
+    };
+  },
 
   // Wall placement
   setWallStartPoint: (point) =>
@@ -415,6 +666,234 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
       },
     })),
 
+  // Column placement
+  setColumnParams: (params) =>
+    set((state) => ({
+      columnPlacement: {
+        ...state.columnPlacement,
+        params: {
+          ...state.columnPlacement.params,
+          ...params,
+        },
+      },
+    })),
+
+  setColumnProfileType: (profileType) =>
+    set((state) => ({
+      columnPlacement: {
+        ...state.columnPlacement,
+        params: {
+          ...state.columnPlacement.params,
+          profileType,
+          // For circular columns, depth = width (diameter)
+          depth: profileType === 'circular' ? state.columnPlacement.params.width : state.columnPlacement.params.depth,
+        },
+      },
+    })),
+
+  setColumnWidth: (width) =>
+    set((state) => ({
+      columnPlacement: {
+        ...state.columnPlacement,
+        params: {
+          ...state.columnPlacement.params,
+          width,
+          // For circular columns, depth follows width
+          depth: state.columnPlacement.params.profileType === 'circular' ? width : state.columnPlacement.params.depth,
+        },
+      },
+    })),
+
+  setColumnDepth: (depth) =>
+    set((state) => ({
+      columnPlacement: {
+        ...state.columnPlacement,
+        params: {
+          ...state.columnPlacement.params,
+          depth,
+        },
+      },
+    })),
+
+  setColumnHeight: (height) =>
+    set((state) => ({
+      columnPlacement: {
+        ...state.columnPlacement,
+        params: {
+          ...state.columnPlacement.params,
+          height,
+        },
+      },
+    })),
+
+  setColumnPreview: (position, isValid) =>
+    set((state) => ({
+      columnPlacement: {
+        ...state.columnPlacement,
+        previewPosition: position,
+        isValidPosition: isValid,
+      },
+    })),
+
+  resetColumnPlacement: () =>
+    set((state) => ({
+      columnPlacement: {
+        ...initialColumnPlacement,
+        // Keep column params
+        params: state.columnPlacement.params,
+      },
+    })),
+
+  // Counter placement
+  setCounterParams: (params) =>
+    set((state) => ({
+      counterPlacement: {
+        ...state.counterPlacement,
+        params: {
+          ...state.counterPlacement.params,
+          ...params,
+        },
+      },
+    })),
+
+  setCounterType: (counterType) =>
+    set((state) => ({
+      counterPlacement: {
+        ...state.counterPlacement,
+        params: {
+          ...state.counterPlacement.params,
+          counterType,
+          // Update type-specific defaults
+          height: getDefaultCounterHeight(counterType),
+          overhang: getDefaultCounterOverhang(counterType),
+          hasFootrest: counterType === 'bar',
+        },
+      },
+    })),
+
+  setCounterDepth: (depth) =>
+    set((state) => ({
+      counterPlacement: {
+        ...state.counterPlacement,
+        params: {
+          ...state.counterPlacement.params,
+          depth,
+        },
+      },
+    })),
+
+  setCounterHeight: (height) =>
+    set((state) => ({
+      counterPlacement: {
+        ...state.counterPlacement,
+        params: {
+          ...state.counterPlacement.params,
+          height,
+        },
+      },
+    })),
+
+  addCounterPoint: (point) =>
+    set((state) => ({
+      counterPlacement: {
+        ...state.counterPlacement,
+        points: [...state.counterPlacement.points, point],
+        isDrawing: true,
+      },
+    })),
+
+  setCounterPreviewPoint: (point) =>
+    set((state) => ({
+      counterPlacement: {
+        ...state.counterPlacement,
+        previewPoint: point,
+      },
+    })),
+
+  resetCounterPlacement: () =>
+    set((state) => ({
+      counterPlacement: {
+        ...initialCounterPlacement,
+        // Keep counter params
+        params: state.counterPlacement.params,
+      },
+    })),
+
+  finishCounterPlacement: () => {
+    const { counterPlacement } = get();
+    const points = [...counterPlacement.points];
+    set((state) => ({
+      counterPlacement: {
+        ...initialCounterPlacement,
+        params: state.counterPlacement.params,
+      },
+    }));
+    return points;
+  },
+
+  // Asset placement
+  setAssetParams: (params) =>
+    set((state) => ({
+      assetPlacement: {
+        ...state.assetPlacement,
+        params: {
+          ...state.assetPlacement.params,
+          ...params,
+        },
+      },
+    })),
+
+  setSelectedAsset: (assetId) =>
+    set((state) => ({
+      assetPlacement: {
+        ...state.assetPlacement,
+        params: {
+          ...state.assetPlacement.params,
+          assetId,
+        },
+      },
+    })),
+
+  setAssetScale: (scale) =>
+    set((state) => ({
+      assetPlacement: {
+        ...state.assetPlacement,
+        params: {
+          ...state.assetPlacement.params,
+          scale,
+        },
+      },
+    })),
+
+  setAssetRotation: (rotation) =>
+    set((state) => ({
+      assetPlacement: {
+        ...state.assetPlacement,
+        params: {
+          ...state.assetPlacement.params,
+          rotation,
+        },
+      },
+    })),
+
+  setAssetPreview: (position, isValid) =>
+    set((state) => ({
+      assetPlacement: {
+        ...state.assetPlacement,
+        previewPosition: position,
+        isValidPosition: isValid,
+      },
+    })),
+
+  resetAssetPlacement: () =>
+    set((state) => ({
+      assetPlacement: {
+        ...initialAssetPlacement,
+        // Keep asset params
+        params: state.assetPlacement.params,
+      },
+    })),
+
   // Utility
   getCursorStyle: () => {
     const { activeTool } = get();
@@ -427,6 +906,8 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
       case 'window':
       case 'column':
       case 'slab':
+      case 'counter':
+      case 'asset':
         return 'crosshair';
       case 'pan':
         return 'grab';
@@ -438,7 +919,10 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
   },
 
   cancelCurrentOperation: () => {
-    const { activeTool, doorPlacement, windowPlacement } = get();
+    const { activeTool, doorPlacement, windowPlacement, columnPlacement, counterPlacement, assetPlacement } = get();
+
+    // Always clear distance input when cancelling
+    set({ distanceInput: initialDistanceInput });
 
     if (activeTool === 'wall') {
       set({ wallPlacement: initialWallPlacement });
@@ -459,6 +943,30 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
         windowPlacement: {
           ...initialWindowPlacement,
           params: windowPlacement.params,
+        },
+      });
+    }
+    if (activeTool === 'column') {
+      set({
+        columnPlacement: {
+          ...initialColumnPlacement,
+          params: columnPlacement.params,
+        },
+      });
+    }
+    if (activeTool === 'counter') {
+      set({
+        counterPlacement: {
+          ...initialCounterPlacement,
+          params: counterPlacement.params,
+        },
+      });
+    }
+    if (activeTool === 'asset') {
+      set({
+        assetPlacement: {
+          ...initialAssetPlacement,
+          params: assetPlacement.params,
         },
       });
     }

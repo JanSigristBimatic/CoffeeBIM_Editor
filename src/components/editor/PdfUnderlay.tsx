@@ -52,17 +52,17 @@ export function PdfUnderlay() {
     const planeCenterX = width / 2 - originOffsetX;
     const planeCenterY = height / 2 - originOffsetY;
 
-    // Apply rotation around the Y axis (vertical) for XZ ground plane
+    // Apply rotation around the Z axis (vertical) for XY ground plane (Z-up)
     const cos = Math.cos(-rotationAngle);
     const sin = Math.sin(-rotationAngle);
-    // Rotate position around Y axis (XZ plane)
+    // Rotate position around Z axis (XY plane)
     const rotatedX = planeCenterX * cos - planeCenterY * sin;
-    const rotatedZ = planeCenterX * sin + planeCenterY * cos;
+    const rotatedY = planeCenterX * sin + planeCenterY * cos;
 
     return {
-      // Y-up coordinate system: X = right, Y = up, Z = forward
-      // Place slightly below ground (Y = -0.001)
-      position: new THREE.Vector3(rotatedX, -0.001, rotatedZ),
+      // Z-up coordinate system: X = right, Y = forward, Z = up
+      // Place slightly below ground (Z = -0.001)
+      position: new THREE.Vector3(rotatedX, rotatedY, -0.001),
       rotation: rotationAngle,
       size: { width, height },
     };
@@ -79,9 +79,9 @@ export function PdfUnderlay() {
   }
 
   return (
-    <group rotation={[0, -rotation, 0]}>
-      {/* Rotate -90° around X to lay flat on XZ plane, flip X for correct orientation */}
-      <mesh position={position} rotation={[-Math.PI / 2, 0, 0]} scale={[-1, 1, 1]}>
+    <group rotation={[0, 0, -rotation]}>
+      {/* Z-up: PlaneGeometry already lies in XY plane, flip X for correct orientation */}
+      <mesh position={position} rotation={[0, 0, 0]} scale={[-1, 1, 1]}>
         <planeGeometry args={[size.width, size.height]} />
         <meshBasicMaterial
           map={texture}

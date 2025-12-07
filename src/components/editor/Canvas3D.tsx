@@ -1,6 +1,6 @@
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewport, Environment } from '@react-three/drei';
-import { Suspense, useRef } from 'react';
+import { Suspense, useRef, useState } from 'react';
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
 import { Grid } from './Grid';
 import { SceneElements } from './SceneElements';
@@ -9,17 +9,32 @@ import { WallPreview } from './WallPreview';
 import { SlabPreview } from './SlabPreview';
 import { DoorPreview } from './DoorPreview';
 import { WindowPreview } from './WindowPreview';
+import { ColumnPreview } from './ColumnPreview';
+import { CounterPreview } from './CounterPreview';
+import { AssetPreviewWrapper } from './AssetPreviewWrapper';
 import { SnapIndicator } from './SnapIndicator';
 import { PdfUnderlay } from './PdfUnderlay';
-import { useViewStore, useToolStore } from '@/store';
+import { CameraController } from './CameraController';
+import { SelectionTransformGizmo } from './TransformGizmo';
+import { useViewStore, useToolStore, useSelectionStore } from '@/store';
 
 export function Canvas3D() {
   const { showGrid, showAxes } = useViewStore();
   const { activeTool } = useToolStore();
+  const { clearSelection } = useSelectionStore();
   const controlsRef = useRef<OrbitControlsType>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
-  // Disable orbit controls when placing elements
-  const isPlacingElement = activeTool === 'wall' || activeTool === 'door' || activeTool === 'window' || activeTool === 'column' || activeTool === 'slab';
+  // Disable orbit controls when placing elements or dragging
+  const isPlacingElement = activeTool === 'wall' || activeTool === 'door' || activeTool === 'window' || activeTool === 'column' || activeTool === 'slab' || activeTool === 'counter' || activeTool === 'asset';
+  const shouldDisableOrbit = isPlacingElement || isDragging;
+
+  // Clear selection when clicking empty space (only in select mode)
+  const handlePointerMissed = () => {
+    if (activeTool === 'select') {
+      clearSelection();
+    }
+  };
 
   return (
     <Canvas
@@ -28,18 +43,16 @@ export function Canvas3D() {
         fov: 50,
         near: 0.1,
         far: 1000,
+        up: [0, 0, 1], // Z-up coordinate system (BIM/IFC standard)
       }}
       shadows
-      onPointerMissed={() => {
-        // Deselect when clicking empty space
-        // Will be implemented with selection store
-      }}
+      onPointerMissed={handlePointerMissed}
     >
       <Suspense fallback={null}>
-        {/* Lighting */}
+        {/* Lighting - Z-up: sun from above-front */}
         <ambientLight intensity={0.4} />
         <directionalLight
-          position={[10, 20, 10]}
+          position={[10, 10, 20]}
           intensity={1}
           castShadow
           shadow-mapSize={[2048, 2048]}
@@ -49,7 +62,7 @@ export function Canvas3D() {
           shadow-camera-top={20}
           shadow-camera-bottom={-20}
         />
-        <directionalLight position={[-10, 10, -10]} intensity={0.3} />
+        <directionalLight position={[-10, -10, 10]} intensity={0.3} />
 
         {/* Environment for better reflections */}
         <Environment preset="city" background={false} />
@@ -78,13 +91,28 @@ export function Canvas3D() {
         {/* Window Preview during placement */}
         <WindowPreview />
 
+        {/* Column Preview during placement */}
+        <ColumnPreview />
+
+        {/* Counter Preview during placement */}
+        <CounterPreview />
+
+        {/* Asset Preview during placement */}
+        <AssetPreviewWrapper />
+
         {/* Snap indicator for endpoint snapping */}
         <SnapIndicator />
 
         {/* Ground plane for interactions and shadows */}
         <GroundPlane />
 
-        {/* Camera Controls */}
+        {/* Transform gizmo for selected elements */}
+        <SelectionTransformGizmo
+          onDragStart={() => setIsDragging(true)}
+          onDragEnd={() => setIsDragging(false)}
+        />
+
+        {/* Camera Controls - Z-up */}
         <OrbitControls
           ref={controlsRef}
           makeDefault
@@ -94,8 +122,11 @@ export function Canvas3D() {
           dampingFactor={0.05}
           minDistance={1}
           maxDistance={100}
-          enabled={!isPlacingElement}
+          enabled={!shouldDisableOrbit}
         />
+
+        {/* Camera Controller for focus/zoom */}
+        <CameraController />
 
         {/* Orientation Gizmo */}
         <GizmoHelper alignment="bottom-right" margin={[80, 80]}>

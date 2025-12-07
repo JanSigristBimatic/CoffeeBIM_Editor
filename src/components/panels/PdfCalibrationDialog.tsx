@@ -180,7 +180,7 @@ export function PdfCalibrationDialog({ open, onClose }: PdfCalibrationDialogProp
         // Proceed to scale step with current rotation angle
         setCalibrationStep('scale');
         break;
-      case 'scale':
+      case 'scale': {
         const distance = parseFloat(scaleDistance);
         if (isNaN(distance) || distance <= 0) {
           setError('Bitte gib einen gültigen Abstand ein.');
@@ -189,6 +189,7 @@ export function PdfCalibrationDialog({ open, onClose }: PdfCalibrationDialogProp
         setRealWorldDistance(distance);
         calculateCalibration();
         break;
+      }
       case 'complete':
         onClose();
         break;

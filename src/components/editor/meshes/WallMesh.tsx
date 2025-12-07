@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { Mesh, Shape, Path, ExtrudeGeometry, MeshStandardMaterial, Euler } from 'three';
-import { useSelectionStore } from '@/store';
 import type { BimElement, Opening } from '@/types/bim';
+import { useDragElement } from '../TransformGizmo';
 
 interface WallMeshProps {
   element: BimElement;
@@ -48,7 +48,7 @@ function createOpeningHole(opening: Opening, wallLength: number, wallHeight: num
 
 export function WallMesh({ element, selected }: WallMeshProps) {
   const meshRef = useRef<Mesh>(null);
-  const { select } = useSelectionStore();
+  const { handlers } = useDragElement(element);
 
   const { wallData } = element;
 
@@ -113,35 +113,28 @@ export function WallMesh({ element, selected }: WallMeshProps) {
     });
   }, [selected]);
 
-  // Handle click
-  const handleClick = (e: { stopPropagation: () => void }) => {
-    e.stopPropagation();
-    select(element.id);
-  };
+  // Calculate rotation from wall direction (Z-up system)
+  const rotation = useMemo(() => {
+    if (!wallData) return new Euler(0, 0, 0);
+    const dx = wallData.endPoint.x - wallData.startPoint.x;
+    const dy = wallData.endPoint.y - wallData.startPoint.y;
+    const angle = Math.atan2(dy, dx);
+    // Wall is built in XY plane (X=length, Y=height), extruded along Z (thickness)
+    // For Z-up: First rotate around world-Z for direction, then rotate +90° around X so Y (height) → Z (up)
+    // Order 'ZXY' ensures angle is applied in world coordinates before the tilt
+    return new Euler(Math.PI / 2, 0, angle, 'ZXY');
+  }, [wallData]);
 
   if (!geometry || !wallData) return null;
-
-  // Calculate rotation from wall direction
-  const dx = wallData.endPoint.x - wallData.startPoint.x;
-  const dy = wallData.endPoint.y - wallData.startPoint.y;
-  const angle = Math.atan2(dy, dx);
-
-  // Wall is built in XY plane (X=length, Y=height), extruded along Z (thickness)
-  // We need to rotate it to stand up in the XZ plane, then rotate around Y for direction
-  // Rotation order: YXZ - first Y rotation (direction), then X rotation (stand up)
-  const rotation = useMemo(
-    () => new Euler(0, -angle, 0, 'YXZ'),
-    [angle]
-  );
 
   return (
     <mesh
       ref={meshRef}
       geometry={geometry}
       material={material}
-      position={[wallData.startPoint.x, 0, wallData.startPoint.y]}
+      position={[wallData.startPoint.x, wallData.startPoint.y, 0]}
       rotation={rotation}
-      onClick={handleClick}
+      {...handlers}
       castShadow
       receiveShadow
     />

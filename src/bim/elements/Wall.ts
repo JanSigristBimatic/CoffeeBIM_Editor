@@ -49,7 +49,7 @@ export function createWall(params: CreateWallParams): BimElement {
     { x: 0, y: halfThickness },
   ];
 
-  // Calculate rotation angle (around Z-axis)
+  // Calculate rotation angle (around Z-axis for Z-up system)
   const angle = Math.atan2(dy, dx);
 
   const wallData: WallData = {
@@ -73,8 +73,10 @@ export function createWall(params: CreateWallParams): BimElement {
       direction: { x: 0, y: 0, z: 1 }, // Extrude upward (Z-up)
     },
     placement: {
+      // Z-up coordinate system: 2D (x,y) → 3D (x, y, 0)
       position: { x: startPoint.x, y: startPoint.y, z: 0 },
       rotation: {
+        // Rotation around Z-axis (quaternion)
         x: 0,
         y: 0,
         z: Math.sin(angle / 2),
@@ -142,4 +144,41 @@ export function getPositionOnWall(
   if (distance > tolerance) return null;
 
   return t; // Return position along wall (0-1)
+}
+
+/**
+ * Update wall dimensions (thickness and/or height)
+ * Recalculates geometry profile when dimensions change
+ */
+export function updateWallDimensions(
+  wall: BimElement,
+  updates: Partial<Pick<WallData, 'thickness' | 'height'>>
+): Partial<BimElement> {
+  if (!wall.wallData) return {};
+
+  const newWallData = { ...wall.wallData, ...updates };
+  const { startPoint, endPoint } = newWallData;
+
+  // Calculate wall length
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+
+  // Recalculate profile with new thickness
+  const halfThickness = newWallData.thickness / 2;
+  const profile: Point2D[] = [
+    { x: 0, y: -halfThickness },
+    { x: length, y: -halfThickness },
+    { x: length, y: halfThickness },
+    { x: 0, y: halfThickness },
+  ];
+
+  return {
+    wallData: newWallData,
+    geometry: {
+      ...wall.geometry,
+      profile,
+      height: newWallData.height,
+    },
+  };
 }

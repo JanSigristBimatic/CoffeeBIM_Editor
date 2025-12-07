@@ -1,0 +1,180 @@
+import { useMemo } from 'react';
+import * as THREE from 'three';
+import type { BimElement } from '@/types/bim';
+import type { Point2D } from '@/types/geometry';
+import { offsetPath } from '@/lib/geometry/pathOffset';
+import { useDragElement } from '../TransformGizmo';
+
+interface CounterMeshProps {
+  element: BimElement;
+  isSelected?: boolean;
+  isHovered?: boolean;
+  onClick?: () => void;
+  onPointerEnter?: () => void;
+  onPointerLeave?: () => void;
+}
+
+/**
+ * Create a closed polygon from front and back paths
+ * Z-up: XY plane is horizontal, shape lies flat at Z=0
+ */
+function createPolygonShape(frontPath: Point2D[], backPath: Point2D[]): THREE.Shape {
+  const shape = new THREE.Shape();
+
+  if (frontPath.length === 0) return shape;
+
+  // Z-up: Start at front path, no negation needed
+  shape.moveTo(frontPath[0]!.x, frontPath[0]!.y);
+
+  // Draw front path
+  for (let i = 1; i < frontPath.length; i++) {
+    shape.lineTo(frontPath[i]!.x, frontPath[i]!.y);
+  }
+
+  // Draw back path in reverse
+  for (let i = backPath.length - 1; i >= 0; i--) {
+    shape.lineTo(backPath[i]!.x, backPath[i]!.y);
+  }
+
+  // Close the shape
+  shape.closePath();
+
+  return shape;
+}
+
+/**
+ * CounterMesh renders a counter (Theke) as 3D geometry
+ * The counter consists of:
+ * - Main body with kick recess
+ * - Countertop with overhang
+ * - Optional footrest bar
+ */
+export function CounterMesh({
+  element,
+  isSelected = false,
+  isHovered = false,
+}: CounterMeshProps) {
+  const { handlers } = useDragElement(element);
+  const counterData = element.counterData;
+
+  const meshes = useMemo(() => {
+    if (!counterData) return null;
+
+    const {
+      path,
+      depth,
+      height,
+      topThickness,
+      overhang,
+      kickHeight,
+      kickRecess,
+      hasFootrest,
+      footrestHeight,
+    } = counterData;
+
+    if (path.length < 2) return null;
+
+    const meshConfigs: Array<{
+      shape: THREE.Shape;
+      height: number;
+      zOffset: number;
+      color: string;
+    }> = [];
+
+    // Calculate the various paths needed
+    // Front path with overhang (customer side extends forward)
+    const frontWithOverhang = offsetPath(path, -overhang);
+    // Back path (service side)
+    const backPath = offsetPath(path, depth);
+    // Front path for kick (same as original path - no overhang at bottom)
+    const frontPath = path;
+    // Back path with kick recess
+    const backWithKick = offsetPath(path, depth - kickRecess);
+
+    // 1. Kick/base section (from floor to kick height)
+    if (kickHeight > 0 && kickRecess > 0) {
+      const kickShape = createPolygonShape(frontPath, backWithKick);
+      meshConfigs.push({
+        shape: kickShape,
+        height: kickHeight,
+        zOffset: 0,
+        color: '#6B7280', // Gray for base
+      });
+    }
+
+    // 2. Main body section (from kick height to below countertop)
+    const mainBodyHeight = height - topThickness - kickHeight;
+    if (mainBodyHeight > 0) {
+      const mainShape = createPolygonShape(frontPath, backPath);
+      meshConfigs.push({
+        shape: mainShape,
+        height: mainBodyHeight,
+        zOffset: kickHeight,
+        color: '#9CA3AF', // Lighter gray for body
+      });
+    }
+
+    // 3. Countertop (with overhang)
+    if (topThickness > 0) {
+      const topShape = createPolygonShape(frontWithOverhang, backPath);
+      meshConfigs.push({
+        shape: topShape,
+        height: topThickness,
+        zOffset: height - topThickness,
+        color: '#374151', // Dark gray for countertop
+      });
+    }
+
+    // 4. Optional footrest bar
+    if (hasFootrest && footrestHeight > 0) {
+      // Footrest is a bar running along the front, slightly inset
+      const footrestFront = offsetPath(path, 0.02); // Slightly behind front
+      const footrestBack = offsetPath(path, 0.05); // Small depth
+      const footrestShape = createPolygonShape(footrestFront, footrestBack);
+      meshConfigs.push({
+        shape: footrestShape,
+        height: 0.03, // 3cm thick bar
+        zOffset: footrestHeight,
+        color: '#1F2937', // Very dark for metal bar
+      });
+    }
+
+    return meshConfigs;
+  }, [counterData]);
+
+  if (!meshes) return null;
+
+  // Calculate color based on selection/hover state
+  const getColor = (baseColor: string): string => {
+    if (isSelected) return '#3B82F6'; // Blue for selected
+    if (isHovered) return '#60A5FA'; // Lighter blue for hovered
+    return baseColor;
+  };
+
+  return (
+    <group {...handlers}>
+      {meshes.map((config, index) => (
+        <mesh
+          key={index}
+          position={[0, 0, config.zOffset]}
+          rotation={[0, 0, 0]}
+        >
+          <extrudeGeometry
+            args={[
+              config.shape,
+              {
+                depth: config.height,
+                bevelEnabled: false,
+              },
+            ]}
+          />
+          <meshStandardMaterial
+            color={getColor(config.color)}
+            roughness={0.7}
+            metalness={0.1}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}

@@ -1,6 +1,11 @@
 import { useSelectionStore, useElementStore } from '@/store';
 import { DoorProperties } from './DoorProperties';
 import { WindowProperties } from './WindowProperties';
+import { ColumnProperties } from './ColumnProperties';
+import { WallProperties } from './WallProperties';
+import { SlabProperties } from './SlabProperties';
+import { FurnitureProperties } from './FurnitureProperties';
+import { CounterProperties } from './CounterProperties';
 
 export function PropertyPanel() {
   const { getSelectedIds } = useSelectionStore();
@@ -73,34 +78,15 @@ export function PropertyPanel() {
 
       {/* Wall-specific properties */}
       {element.type === 'wall' && element.wallData && (
-        <div className="mt-4 pt-4 border-t space-y-3">
-          <h3 className="text-sm font-semibold">Wand-Parameter</h3>
+        <div className="mt-4 pt-4 border-t">
+          <WallProperties element={element} />
+        </div>
+      )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs text-muted-foreground">Dicke (m)</label>
-              <input
-                type="number"
-                value={element.wallData.thickness}
-                readOnly
-                className="w-full mt-1 px-2 py-1 text-sm border rounded bg-muted"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Höhe (m)</label>
-              <input
-                type="number"
-                value={element.wallData.height}
-                readOnly
-                className="w-full mt-1 px-2 py-1 text-sm border rounded bg-muted"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-muted-foreground">Öffnungen</label>
-            <p className="text-sm">{element.wallData.openings.length}</p>
-          </div>
+      {/* Slab-specific properties */}
+      {element.type === 'slab' && element.slabData && (
+        <div className="mt-4 pt-4 border-t">
+          <SlabProperties element={element} />
         </div>
       )}
 
@@ -115,6 +101,27 @@ export function PropertyPanel() {
       {element.type === 'window' && element.windowData && (
         <div className="mt-4 pt-4 border-t">
           <WindowProperties element={element} />
+        </div>
+      )}
+
+      {/* Column-specific properties */}
+      {element.type === 'column' && element.columnData && (
+        <div className="mt-4 pt-4 border-t">
+          <ColumnProperties element={element} />
+        </div>
+      )}
+
+      {/* Furniture-specific properties */}
+      {element.type === 'furniture' && element.furnitureData && (
+        <div className="mt-4 pt-4 border-t">
+          <FurnitureProperties element={element} />
+        </div>
+      )}
+
+      {/* Counter-specific properties */}
+      {element.type === 'counter' && element.counterData && (
+        <div className="mt-4 pt-4 border-t">
+          <CounterProperties element={element} />
         </div>
       )}
     </div>

@@ -106,10 +106,10 @@ export function useWindowPlacement() {
 
       event.stopPropagation();
 
-      // Get click position in world coordinates
+      // Get click position in world coordinates (Z-up: XY is ground plane)
       const point: Point2D = {
         x: event.point.x,
-        y: event.point.z, // 3D z maps to 2D y
+        y: event.point.y,
       };
 
       // Find wall at this point
@@ -180,10 +180,10 @@ export function useWindowPlacement() {
     (event: ThreeEvent<PointerEvent>) => {
       if (activeTool !== 'window') return;
 
-      // Get pointer position in world coordinates
+      // Get pointer position in world coordinates (Z-up: XY is ground plane)
       const point: Point2D = {
         x: event.point.x,
-        y: event.point.z, // 3D z maps to 2D y
+        y: event.point.y,
       };
 
       // Find wall at this point

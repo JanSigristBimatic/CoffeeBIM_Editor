@@ -336,6 +336,46 @@ export function DoorProperties({ element }: DoorPropertiesProps) {
           </div>
         </div>
       )}
+
+      {/* Swing Side - Inward/Outward (for non-sliding doors) */}
+      {doorData.doorType !== 'sliding' && (
+        <div className="pt-2 border-t">
+          <label className="text-xs text-muted-foreground block mb-1.5">Aufgehrichtung</label>
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              onClick={() =>
+                updateElement(element.id, {
+                  doorData: { ...doorData, swingSide: 'inward' },
+                })
+              }
+              className={`px-2 py-1.5 text-xs rounded border transition-colors ${
+                doorData.swingSide === 'inward'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted border-border hover:bg-accent'
+              }`}
+            >
+              Innen
+            </button>
+            <button
+              onClick={() =>
+                updateElement(element.id, {
+                  doorData: { ...doorData, swingSide: 'outward' },
+                })
+              }
+              className={`px-2 py-1.5 text-xs rounded border transition-colors ${
+                doorData.swingSide === 'outward'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted border-border hover:bg-accent'
+              }`}
+            >
+              Außen
+            </button>
+          </div>
+          <span className="text-xs text-muted-foreground mt-1 block">
+            Innen: Tür öffnet in den Raum. Außen: Tür öffnet nach draußen.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

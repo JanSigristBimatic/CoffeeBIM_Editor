@@ -1,14 +1,16 @@
 import { ChevronDown, ChevronRight, Building2, Layers, Box, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useProjectStore, useElementStore, useSelectionStore } from '@/store';
+import { useProjectStore, useElementStore, useSelectionStore, useViewStore } from '@/store';
 import { cn } from '@/lib/utils';
 import type { BimElement } from '@/types/bim';
 import { DEFAULT_STOREY_HEIGHT } from '@/types/bim';
+import { getElementCenter } from '@/lib/geometry';
 
 export function HierarchyPanel() {
   const { project, site, building, storeys, activeStoreyId, setActiveStorey, addStorey, removeStorey } = useProjectStore();
   const { getElementsByStorey } = useElementStore();
   const { select, isSelected } = useSelectionStore();
+  const { focusOnPosition } = useViewStore();
 
   const [expandedStoreys, setExpandedStoreys] = useState<Set<string>>(
     new Set(storeys.map((s) => s.id))
@@ -53,6 +55,11 @@ export function HierarchyPanel() {
     if (confirm('Stockwerk und alle zugehörigen Elemente löschen?')) {
       removeStorey(storeyId);
     }
+  };
+
+  const handleFocusElement = (element: BimElement) => {
+    const center = getElementCenter(element);
+    focusOnPosition(center);
   };
 
   return (
@@ -133,6 +140,7 @@ export function HierarchyPanel() {
                         element={element}
                         isSelected={isSelected(element.id)}
                         onSelect={() => select(element.id)}
+                        onDoubleClick={() => handleFocusElement(element)}
                       />
                     ))
                   )}
@@ -185,9 +193,10 @@ interface ElementItemProps {
   element: BimElement;
   isSelected: boolean;
   onSelect: () => void;
+  onDoubleClick: () => void;
 }
 
-function ElementItem({ element, isSelected, onSelect }: ElementItemProps) {
+function ElementItem({ element, isSelected, onSelect, onDoubleClick }: ElementItemProps) {
   const getIcon = () => {
     switch (element.type) {
       case 'wall':
@@ -215,6 +224,7 @@ function ElementItem({ element, isSelected, onSelect }: ElementItemProps) {
         isSelected && 'bg-primary text-primary-foreground'
       )}
       onClick={onSelect}
+      onDoubleClick={onDoubleClick}
     >
       <span>{getIcon()}</span>
       <span className="truncate">{element.name}</span>

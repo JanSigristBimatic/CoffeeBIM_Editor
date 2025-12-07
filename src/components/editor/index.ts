@@ -1,4 +1,8 @@
+export { CameraController } from './CameraController';
 export { Canvas3D } from './Canvas3D';
+export { ColumnPreview } from './ColumnPreview';
+export { CounterPreview } from './CounterPreview';
+export { DistanceInputOverlay } from './DistanceInputOverlay';
 export { DoorPreview } from './DoorPreview';
 export { Grid } from './Grid';
 export { GroundPlane } from './GroundPlane';
@@ -8,5 +12,6 @@ export { SlabCompleteDialog } from './SlabCompleteDialog';
 export { SlabPreview } from './SlabPreview';
 export { SnapIndicator } from './SnapIndicator';
 export { Toolbar } from './Toolbar';
+export { SelectionTransformGizmo } from './TransformGizmo';
 export { WallPreview } from './WallPreview';
 export { WindowPreview } from './WindowPreview';

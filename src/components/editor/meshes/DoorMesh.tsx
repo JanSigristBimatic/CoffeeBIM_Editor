@@ -1,7 +1,9 @@
 import { useMemo, useRef } from 'react';
 import { BoxGeometry, MeshStandardMaterial, Group, Euler } from 'three';
-import { useSelectionStore, useElementStore } from '@/store';
+import { useElementStore } from '@/store';
 import type { BimElement } from '@/types/bim';
+import { DoorSwingArc } from './DoorSwingArc';
+import { useDragElement } from '../TransformGizmo';
 
 interface DoorMeshProps {
   element: BimElement;
@@ -19,8 +21,8 @@ const PANEL_THICKNESS = 0.04; // Door panel thickness
 
 export function DoorMesh({ element, selected }: DoorMeshProps) {
   const groupRef = useRef<Group>(null);
-  const { select } = useSelectionStore();
   const { getElement, elements } = useElementStore();
+  const { handlers } = useDragElement(element);
 
   const { doorData } = element;
 
@@ -31,7 +33,7 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
     return getElement(doorData.hostWallId) ?? null;
   }, [doorData, elements, getElement]);
 
-  // Calculate world position and rotation from host wall
+  // Calculate world position and rotation from host wall (Z-up)
   const transform = useMemo(() => {
     if (!doorData || !hostWall?.wallData) return null;
 
@@ -43,15 +45,15 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
     const dy = endPoint.y - startPoint.y;
     const wallLength = Math.sqrt(dx * dx + dy * dy);
 
-    // Position along wall
+    // Z-up: Position along wall in XY plane
     const x = startPoint.x + dx * positionOnWall;
-    const z = startPoint.y + dy * positionOnWall;
+    const y = startPoint.y + dy * positionOnWall;
 
     // Wall angle
     const angle = Math.atan2(dy, dx);
 
     return {
-      position: { x, y: height / 2, z },
+      position: { x, y, z: height / 2 },
       angle,
       wallThickness: thickness,
       wallLength,
@@ -99,25 +101,22 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
     });
   }, [selected]);
 
-  // Handle click
-  const handleClick = (e: { stopPropagation: () => void }) => {
-    e.stopPropagation();
-    select(element.id);
-  };
-
   if (!doorData || !transform || !frameGeometries || !panelGeometry) return null;
 
   const { width, height } = doorData;
   const hw = width / 2;
 
+  // Z-up: Door is rotated to stand up, then rotated around Z for wall direction
+  // Frame geometries are created in XY plane (X=width, Y=height)
+  // Rotate +90° around X so Y (height) → Z (up), then rotate around Z for wall angle
   return (
     <group
       ref={groupRef}
-      position={[transform.position.x, 0, transform.position.z]}
-      rotation={new Euler(0, -transform.angle, 0)}
-      onClick={handleClick}
+      position={[transform.position.x, transform.position.y, 0]}
+      rotation={new Euler(Math.PI / 2, 0, transform.angle, 'ZXY')}
+      {...handlers}
     >
-      {/* Left frame */}
+      {/* Left frame - in local coords: X is along wall, Y is height (becomes Z after rotation) */}
       <mesh
         geometry={frameGeometries.left}
         material={frameMaterial}
@@ -147,6 +146,16 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
         material={panelMaterial}
         position={[0, height / 2, PANEL_THICKNESS / 2]}
         castShadow
+      />
+
+      {/* Door swing arc - architectural floor plan convention (Z-up) */}
+      <DoorSwingArc
+        doorWidth={width}
+        doorType={doorData.doorType}
+        swingDirection={doorData.swingDirection}
+        swingSide={doorData.swingSide}
+        selected={selected}
+        zOffset={0.02}
       />
     </group>
   );

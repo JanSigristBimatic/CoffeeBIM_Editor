@@ -53,10 +53,11 @@ export function createSlab(params: CreateSlabParams): BimElement {
     geometry: {
       profile: outline.map((p) => ({ ...p })),
       height: thickness,
-      direction: { x: 0, y: 0, z: 1 },
+      direction: { x: 0, y: 0, z: 1 }, // Extrude upward (Z-up)
     },
     placement: {
-      position: { x: centroid.x, y: 0, z: centroid.y },
+      // Z-up coordinate system: 2D (x,y) → 3D (x, y, 0)
+      position: { x: centroid.x, y: centroid.y, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 },
     },
     properties: [
@@ -76,6 +77,45 @@ export function createSlab(params: CreateSlabParams): BimElement {
 
 /**
  * Calculate the area of a polygon using the shoelace formula
+ */
+export function calculateSlabArea(points: Point2D[]): number {
+  return calculateArea(points);
+}
+
+/**
+ * Update slab dimensions (thickness and/or type)
+ */
+export function updateSlabDimensions(
+  slab: BimElement,
+  updates: Partial<Pick<SlabData, 'thickness' | 'slabType'>>
+): Partial<BimElement> {
+  if (!slab.slabData) return {};
+
+  const newSlabData = { ...slab.slabData, ...updates };
+
+  return {
+    slabData: newSlabData,
+    geometry: {
+      ...slab.geometry,
+      height: newSlabData.thickness,
+    },
+    properties: slab.properties.map((ps) =>
+      ps.name === 'Pset_SlabCommon'
+        ? {
+            ...ps,
+            properties: {
+              ...ps.properties,
+              SlabType: newSlabData.slabType,
+              Thickness: newSlabData.thickness,
+            },
+          }
+        : ps
+    ),
+  };
+}
+
+/**
+ * Calculate the area of a polygon using the shoelace formula (internal)
  */
 function calculateArea(points: Point2D[]): number {
   let area = 0;

@@ -54,10 +54,10 @@ export function DimensionLine({
   const midY = (start[1] + end[1]) / 2;
   const midZ = (start[2] + end[2]) / 2;
 
-  // Calculate angle for text rotation (in XZ plane)
+  // Calculate angle for text rotation (in XY plane for Z-up)
   const dx = end[0] - start[0];
-  const dz = end[2] - start[2];
-  const angle = Math.atan2(dz, dx);
+  const dy = end[1] - start[1];
+  const angle = Math.atan2(dy, dx);
 
   // Format distance for display
   const distanceText = formatDistance(distance);
@@ -80,10 +80,10 @@ export function DimensionLine({
       <EndCap position={start} angle={angle} color={color} renderOrder={renderOrder} />
       <EndCap position={end} angle={angle} color={color} renderOrder={renderOrder} />
 
-      {/* Distance text */}
+      {/* Distance text (Z-up: text lies in XY plane, offset above line along Z) */}
       <Text
-        position={[midX, midY + textOffset, midZ]}
-        rotation={[-Math.PI / 2, 0, -angle]}
+        position={[midX, midY, midZ + textOffset]}
+        rotation={[0, 0, -angle]}
         fontSize={fontSize}
         color={textColor}
         anchorX="center"
@@ -108,20 +108,21 @@ interface EndCapProps {
 
 /**
  * Small perpendicular mark at dimension line ends
+ * Z-up: perpendicular in XY plane
  */
 function EndCap({ position, angle, color, renderOrder }: EndCapProps) {
   const [x, y, z] = position;
   const capLength = 0.08;
 
-  // Perpendicular to line direction
-  const perpX = Math.sin(angle) * capLength;
-  const perpZ = -Math.cos(angle) * capLength;
+  // Perpendicular to line direction (Z-up: in XY plane)
+  const perpX = -Math.sin(angle) * capLength;
+  const perpY = Math.cos(angle) * capLength;
 
   return (
     <Line
       points={[
-        [x - perpX, y, z - perpZ],
-        [x + perpX, y, z + perpZ],
+        [x - perpX, y - perpY, z],
+        [x + perpX, y + perpY, z],
       ]}
       color={color}
       lineWidth={2}

@@ -1,25 +1,30 @@
 import { useCallback, useMemo } from 'react';
 import { ThreeEvent } from '@react-three/fiber';
 import { useElementStore, useViewStore } from '@/store';
-import { snapPoint as snapPointUtil, findNearestPoint } from '@/lib/geometry/math';
-import type { Point2D } from '@/types/geometry';
+import {
+  snapPointAdvanced,
+  getSnapCandidates,
+} from '@/lib/geometry/math';
+import type { Point2D, LineSegment, SnapType } from '@/types/geometry';
+import type { SnapCandidate } from '@/lib/geometry';
 
-/** Snap tolerance for endpoints in meters */
+/** Snap tolerance for all snap types in meters */
 export const SNAP_TOLERANCE = 0.3;
 
 export interface SnapResult {
   point: Point2D;
-  snappedTo: 'point' | 'grid' | 'none';
-  snappedToPoint: Point2D | null;
+  type: SnapType;
+  sourceSegment?: LineSegment;
+  referencePoint?: Point2D;
 }
 
 /**
- * Hook for snapping points to existing element endpoints or grid
- * Reusable across all placement tools (walls, doors, columns, etc.)
+ * Hook for snapping points to existing element features
+ * Supports: endpoints, midpoints, perpendicular, nearest on line, grid
  */
 export function useSnap() {
   const { elements } = useElementStore();
-  const { snapToGrid: snapEnabled, snapSize } = useViewStore();
+  const { snapToGrid: snapEnabled, snapSize, snapSettings } = useViewStore();
 
   /**
    * Get all snappable endpoints from existing elements
@@ -55,50 +60,107 @@ export function useSnap() {
   }, [elements]);
 
   /**
-   * Snap a 2D point to existing endpoints or grid
+   * Get all wall segments for extended snapping (midpoint, perpendicular, nearest)
+   */
+  const wallSegments = useMemo(() => {
+    const segments: LineSegment[] = [];
+
+    elements.forEach((element) => {
+      if (element.type === 'wall' && element.wallData) {
+        segments.push({
+          start: { ...element.wallData.startPoint },
+          end: { ...element.wallData.endPoint },
+        });
+      }
+    });
+
+    return segments;
+  }, [elements]);
+
+  /**
+   * Snap a 2D point using all enabled snap modes
    */
   const snap = useCallback(
-    (point: Point2D): SnapResult => {
-      const result = snapPointUtil(
+    (point: Point2D, referencePoint?: Point2D): SnapResult => {
+      return snapPointAdvanced(
         point,
         snapPoints,
+        wallSegments,
         SNAP_TOLERANCE,
         snapSize,
-        snapEnabled
+        snapSettings,
+        referencePoint
       );
-
-      return {
-        point: result.point,
-        snappedTo: result.snappedTo,
-        snappedToPoint: result.snappedTo === 'point' ? result.point : null,
-      };
     },
-    [snapPoints, snapEnabled, snapSize]
+    [snapPoints, wallSegments, snapSize, snapSettings]
   );
 
   /**
    * Convert Three.js pointer event to snapped 2D point
-   * Three.js uses Y-up, we work in XZ plane
+   * Z-up coordinate system: XY is ground plane
    */
   const snapFromEvent = useCallback(
-    (event: ThreeEvent<PointerEvent>): SnapResult => {
+    (event: ThreeEvent<PointerEvent>, referencePoint?: Point2D): SnapResult => {
       const rawPoint: Point2D = {
         x: event.point.x,
-        y: event.point.z, // Three.js Z becomes our Y
+        y: event.point.y, // Z-up: 3D (x, y) maps directly to 2D (x, y)
       };
-      return snap(rawPoint);
+      return snap(rawPoint, referencePoint);
+    },
+    [snap]
+  );
+
+  /**
+   * Get all snap candidates near a point (for showing multiple indicators)
+   */
+  const getNearbyCandidates = useCallback(
+    (point: Point2D): SnapCandidate[] => {
+      return getSnapCandidates(
+        point,
+        snapPoints,
+        wallSegments,
+        SNAP_TOLERANCE,
+        snapSettings
+      );
+    },
+    [snapPoints, wallSegments, snapSettings]
+  );
+
+  /**
+   * Get the best snap candidate for a point
+   */
+  const getBestSnapCandidate = useCallback(
+    (point: Point2D, referencePoint?: Point2D): SnapResult | null => {
+      const result = snap(point, referencePoint);
+      if (result.type === 'none') return null;
+      return result;
     },
     [snap]
   );
 
   /**
    * Check if a point is near any snap point (for visual indicators)
+   * Returns the closest candidate with its type
    */
   const getNearestSnapPoint = useCallback(
-    (point: Point2D): Point2D | null => {
-      return findNearestPoint(point, snapPoints, SNAP_TOLERANCE);
+    (point: Point2D): { point: Point2D; type: SnapType } | null => {
+      const candidates = getNearbyCandidates(point);
+      const firstCandidate = candidates[0];
+      if (!firstCandidate) return null;
+      return { point: firstCandidate.point, type: firstCandidate.type };
     },
-    [snapPoints]
+    [getNearbyCandidates]
+  );
+
+  /**
+   * Legacy function for backward compatibility
+   */
+  const getNearestSnapPointLegacy = useCallback(
+    (point: Point2D): Point2D | null => {
+      const result = getNearestSnapPoint(point);
+      return result ? result.point : null;
+    },
+    [getNearestSnapPoint]
   );
 
   /**
@@ -119,10 +181,15 @@ export function useSnap() {
     snap,
     snapFromEvent,
     getNearestSnapPoint,
+    getNearestSnapPointLegacy,
+    getBestSnapCandidate,
+    getNearbyCandidates,
     snapPoints,
+    wallSegments,
     wallEndpoints,
     snapEnabled,
     snapSize,
+    snapSettings,
     SNAP_TOLERANCE,
   };
 }

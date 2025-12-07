@@ -32,27 +32,27 @@ export function WindowPreview() {
     const dy = endPoint.y - startPoint.y;
     const wallLength = Math.sqrt(dx * dx + dy * dy);
 
-    // Position along wall
+    // Position along wall (Z-up: x, y are ground plane)
     const x = startPoint.x + dx * previewPosition;
-    const z = startPoint.y + dy * previewPosition;
+    const y = startPoint.y + dy * previewPosition;
 
-    // Wall angle
+    // Wall angle (rotation around Z axis)
     const angle = Math.atan2(dy, dx);
 
-    // Wall start and end positions in 3D
+    // Wall start and end positions in 3D (Z-up)
     const wallStartX = startPoint.x;
-    const wallStartZ = startPoint.y;
+    const wallStartY = startPoint.y;
     const wallEndX = endPoint.x;
-    const wallEndZ = endPoint.y;
+    const wallEndY = endPoint.y;
 
     return {
-      position: { x, z },
+      position: { x, y },
       angle,
       wallLength,
       wallStartX,
-      wallStartZ,
+      wallStartY,
       wallEndX,
-      wallEndZ,
+      wallEndY,
     };
   }, [hostWall, previewPosition]);
 
@@ -70,22 +70,22 @@ export function WindowPreview() {
   }
 
   const hw = params.width / 2;
-  // Position window center at sillHeight + half height
-  const windowCenterY = params.sillHeight + params.height / 2;
-  const dimensionY = params.sillHeight + 0.1; // Slightly above sill for dimension lines
+  // Position window center at sillHeight + half height (Z-up: z is height)
+  const windowCenterZ = params.sillHeight + params.height / 2;
+  const dimensionZ = params.sillHeight + 0.1; // Slightly above sill for dimension lines
 
-  // Calculate dimension line endpoints
+  // Calculate dimension line endpoints (Z-up: X, Y are ground plane)
   const windowLeftX = transform.position.x - Math.cos(transform.angle) * hw;
-  const windowLeftZ = transform.position.z - Math.sin(transform.angle) * hw;
+  const windowLeftY = transform.position.y - Math.sin(transform.angle) * hw;
   const windowRightX = transform.position.x + Math.cos(transform.angle) * hw;
-  const windowRightZ = transform.position.z + Math.sin(transform.angle) * hw;
+  const windowRightY = transform.position.y + Math.sin(transform.angle) * hw;
 
   return (
     <group renderOrder={999}>
-      {/* Window preview mesh */}
+      {/* Window preview mesh (Z-up: x, y ground, z height) */}
       <group
-        position={[transform.position.x, windowCenterY, transform.position.z]}
-        rotation={new Euler(0, -transform.angle, 0)}
+        position={[transform.position.x, transform.position.y, windowCenterZ]}
+        rotation={new Euler(Math.PI / 2, 0, transform.angle, 'ZXY')}
       >
         <mesh geometry={windowGeometry} material={previewMaterial} renderOrder={999} />
 
@@ -96,20 +96,20 @@ export function WindowPreview() {
         </lineSegments>
       </group>
 
-      {/* Distance indicators using reusable DimensionLine */}
+      {/* Distance indicators using reusable DimensionLine (Z-up) */}
       {distanceFromLeft !== null && distanceFromRight !== null && (
         <group>
           {/* Left distance line (wall start to window left edge) */}
           <DimensionLine
-            start={[transform.wallStartX, dimensionY, transform.wallStartZ]}
-            end={[windowLeftX, dimensionY, windowLeftZ]}
+            start={[transform.wallStartX, transform.wallStartY, dimensionZ]}
+            end={[windowLeftX, windowLeftY, dimensionZ]}
             distance={distanceFromLeft}
           />
 
           {/* Right distance line (window right edge to wall end) */}
           <DimensionLine
-            start={[windowRightX, dimensionY, windowRightZ]}
-            end={[transform.wallEndX, dimensionY, transform.wallEndZ]}
+            start={[windowRightX, windowRightY, dimensionZ]}
+            end={[transform.wallEndX, transform.wallEndY, dimensionZ]}
             distance={distanceFromRight}
           />
         </group>

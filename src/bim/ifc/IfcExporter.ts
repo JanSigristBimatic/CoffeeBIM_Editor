@@ -1,5 +1,6 @@
 import * as WebIFC from 'web-ifc';
 import type { BimElement, ProjectInfo, SiteInfo, BuildingInfo, StoreyInfo } from '@/types/bim';
+import { offsetPath, createCounterPolygon } from '@/lib/geometry/pathOffset';
 
 /**
  * IFC Exporter using web-ifc
@@ -19,6 +20,9 @@ export class IfcExporter {
   private doorIds: Map<string, number> = new Map();
   private windowIds: Map<string, number> = new Map();
   private openingIds: Map<string, number> = new Map();
+  private columnIds: Map<string, number> = new Map();
+  private counterIds: Map<string, number> = new Map();
+  private furnitureIds: Map<string, number> = new Map();
 
   constructor() {
     this.ifcApi = new WebIFC.IfcAPI();
@@ -53,6 +57,9 @@ export class IfcExporter {
     this.doorIds.clear();
     this.windowIds.clear();
     this.openingIds.clear();
+    this.columnIds.clear();
+    this.counterIds.clear();
+    this.furnitureIds.clear();
 
     // Create IFC hierarchy
     this.createOwnerHistory();
@@ -92,6 +99,24 @@ export class IfcExporter {
     const slabs = elements.filter((e) => e.type === 'slab');
     for (const slab of slabs) {
       this.createSlab(slab, storeys);
+    }
+
+    // Export columns
+    const columns = elements.filter((e) => e.type === 'column');
+    for (const column of columns) {
+      this.createColumn(column, storeys);
+    }
+
+    // Export counters
+    const counters = elements.filter((e) => e.type === 'counter');
+    for (const counter of counters) {
+      this.createCounter(counter, storeys);
+    }
+
+    // Export furniture
+    const furniture = elements.filter((e) => e.type === 'furniture');
+    for (const item of furniture) {
+      this.createFurniture(item, storeys);
     }
 
     // Get IFC data
@@ -466,6 +491,9 @@ export class IfcExporter {
 
     this.wallIds.set(wall.id, wallIfcId);
 
+    // Create property sets
+    this.createPropertySets(wall, wallIfcId);
+
     // Assign to storey
     if (storeyIfcId) {
       this.createContainedInSpatialStructure(wallIfcId, storeyIfcId);
@@ -597,6 +625,9 @@ export class IfcExporter {
     });
 
     this.doorIds.set(door.id, doorIfcId);
+
+    // Create property sets
+    this.createPropertySets(door, doorIfcId);
 
     // Create IfcRelFillsElement (door fills opening)
     const relFillsId = this.getNextId();
@@ -743,6 +774,9 @@ export class IfcExporter {
 
     this.windowIds.set(window.id, windowIfcId);
 
+    // Create property sets
+    this.createPropertySets(window, windowIfcId);
+
     // Create IfcRelFillsElement (window fills opening)
     const relFillsId = this.getNextId();
     this.ifcApi.WriteLine(this.modelId, {
@@ -809,9 +843,286 @@ export class IfcExporter {
       PredefinedType: { type: 3, value: 'FLOOR' },
     });
 
+    // Create property sets
+    this.createPropertySets(slab, slabIfcId);
+
     // Assign to storey
     if (storeyIfcId) {
       this.createContainedInSpatialStructure(slabIfcId, storeyIfcId);
+    }
+  }
+
+  private createColumn(column: BimElement, storeys: StoreyInfo[]): void {
+    if (!column.columnData) return;
+
+    const { profileType, width, depth, height } = column.columnData;
+
+    // Find storey
+    const storey = storeys.find((s) => s.id === column.parentId);
+    const storeyIfcId = storey ? this.storeyIds.get(storey.id) : null;
+
+    // Position from placement (Z-up: x, y are horizontal, z is vertical)
+    const posX = column.placement.position.x;
+    const posY = column.placement.position.y; // Z-up: direct mapping
+    const posZ = storey?.elevation ?? 0;
+
+    // Create placement at column position
+    const placementId = this.createLocalPlacement(null, posX, posY, posZ);
+
+    // Create profile based on type
+    let profileId: number;
+    if (profileType === 'circular') {
+      profileId = this.createCircleProfile(width / 2); // radius = width/2
+    } else {
+      profileId = this.createRectangleProfile(width, depth);
+    }
+
+    // Create extruded solid
+    const solidId = this.createExtrudedSolid(profileId, height);
+
+    // Create shape representation
+    const shapeRepId = this.createShapeRepresentation(solidId, 'Body', 'SweptSolid');
+
+    // Create product representation
+    const productRepId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: productRepId,
+      type: WebIFC.IFCPRODUCTDEFINITIONSHAPE,
+      Name: null,
+      Description: null,
+      Representations: [{ type: 5, value: shapeRepId }],
+    });
+
+    // Create column
+    const columnIfcId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: columnIfcId,
+      type: WebIFC.IFCCOLUMN,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: { type: 1, value: column.name },
+      Description: null,
+      ObjectType: null,
+      ObjectPlacement: { type: 5, value: placementId },
+      Representation: { type: 5, value: productRepId },
+      Tag: null,
+    });
+
+    this.columnIds.set(column.id, columnIfcId);
+
+    // Create property sets
+    this.createPropertySets(column, columnIfcId);
+
+    // Assign to storey
+    if (storeyIfcId) {
+      this.createContainedInSpatialStructure(columnIfcId, storeyIfcId);
+    }
+  }
+
+  private createCounter(counter: BimElement, storeys: StoreyInfo[]): void {
+    if (!counter.counterData) return;
+
+    const {
+      path,
+      depth,
+      height,
+      topThickness,
+      overhang,
+      kickHeight,
+      kickRecess,
+      hasFootrest,
+      footrestHeight,
+    } = counter.counterData;
+
+    if (path.length < 2) return;
+
+    // Find storey
+    const storey = storeys.find((s) => s.id === counter.parentId);
+    const storeyIfcId = storey ? this.storeyIds.get(storey.id) : null;
+    const storeyElevation = storey?.elevation ?? 0;
+
+    // Calculate the various paths needed for counter sections
+    const frontPath = path;
+    const backPath = offsetPath(path, depth);
+    const frontWithOverhang = offsetPath(path, -overhang);
+    const backWithKick = offsetPath(path, depth - kickRecess);
+
+    // Collect all solid IDs for the shape representation
+    const solidIds: number[] = [];
+
+    // 1. Kick/base section (from floor to kick height)
+    if (kickHeight > 0 && kickRecess > 0) {
+      const kickOutline = createCounterPolygon(frontPath, backWithKick);
+      if (kickOutline.length >= 3) {
+        const kickProfileId = this.createArbitraryProfile(kickOutline);
+        const kickSolidId = this.createExtrudedSolidAtHeight(kickProfileId, kickHeight, storeyElevation);
+        solidIds.push(kickSolidId);
+      }
+    }
+
+    // 2. Main body section (from kick height to below countertop)
+    const mainBodyHeight = height - topThickness - kickHeight;
+    if (mainBodyHeight > 0) {
+      const mainOutline = createCounterPolygon(frontPath, backPath);
+      if (mainOutline.length >= 3) {
+        const mainProfileId = this.createArbitraryProfile(mainOutline);
+        const mainSolidId = this.createExtrudedSolidAtHeight(
+          mainProfileId,
+          mainBodyHeight,
+          storeyElevation + kickHeight
+        );
+        solidIds.push(mainSolidId);
+      }
+    }
+
+    // 3. Countertop (with overhang)
+    if (topThickness > 0) {
+      const topOutline = createCounterPolygon(frontWithOverhang, backPath);
+      if (topOutline.length >= 3) {
+        const topProfileId = this.createArbitraryProfile(topOutline);
+        const topSolidId = this.createExtrudedSolidAtHeight(
+          topProfileId,
+          topThickness,
+          storeyElevation + height - topThickness
+        );
+        solidIds.push(topSolidId);
+      }
+    }
+
+    // 4. Optional footrest bar
+    if (hasFootrest && footrestHeight > 0) {
+      const footrestFront = offsetPath(path, 0.02);
+      const footrestBack = offsetPath(path, 0.05);
+      const footrestOutline = createCounterPolygon(footrestFront, footrestBack);
+      if (footrestOutline.length >= 3) {
+        const footrestProfileId = this.createArbitraryProfile(footrestOutline);
+        const footrestSolidId = this.createExtrudedSolidAtHeight(
+          footrestProfileId,
+          0.03, // 3cm thick bar
+          storeyElevation + footrestHeight
+        );
+        solidIds.push(footrestSolidId);
+      }
+    }
+
+    if (solidIds.length === 0) return;
+
+    // Create placement at origin (geometry already includes positions)
+    const placementId = this.createLocalPlacement(null, 0, 0, 0);
+
+    // Create shape representation with all solids
+    const shapeRepId = this.createMultiSolidShapeRepresentation(solidIds);
+
+    // Create product representation
+    const productRepId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: productRepId,
+      type: WebIFC.IFCPRODUCTDEFINITIONSHAPE,
+      Name: null,
+      Description: null,
+      Representations: [{ type: 5, value: shapeRepId }],
+    });
+
+    // Create counter as IfcBuildingElementProxy (generic building element)
+    // IFC 2x3 doesn't have a specific counter type, so we use proxy
+    const counterIfcId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: counterIfcId,
+      type: WebIFC.IFCBUILDINGELEMENTPROXY,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: { type: 1, value: counter.name },
+      Description: { type: 1, value: 'Counter/Theke' },
+      ObjectType: { type: 1, value: 'Counter' },
+      ObjectPlacement: { type: 5, value: placementId },
+      Representation: { type: 5, value: productRepId },
+      Tag: null,
+      CompositionType: null,
+    });
+
+    this.counterIds.set(counter.id, counterIfcId);
+
+    // Create property sets
+    this.createPropertySets(counter, counterIfcId);
+
+    // Assign to storey
+    if (storeyIfcId) {
+      this.createContainedInSpatialStructure(counterIfcId, storeyIfcId);
+    }
+  }
+
+  private createFurniture(furniture: BimElement, storeys: StoreyInfo[]): void {
+    if (!furniture.furnitureData) return;
+
+    const { width, depth, height, meshData } = furniture.furnitureData;
+
+    // Find storey
+    const storey = storeys.find((s) => s.id === furniture.parentId);
+    const storeyIfcId = storey ? this.storeyIds.get(storey.id) : null;
+
+    // Position from placement (Z-up: x, y are horizontal, z is vertical)
+    const posX = furniture.placement.position.x;
+    const posY = furniture.placement.position.y; // Z-up: direct mapping
+    const posZ = (storey?.elevation ?? 0) + furniture.placement.position.z;
+
+    // Calculate rotation from quaternion (Z-axis rotation for Z-up)
+    const q = furniture.placement.rotation;
+    const rotationZ = Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z));
+
+    // Create placement at furniture position
+    const placementId = this.createLocalPlacement(null, posX, posY, posZ, rotationZ);
+
+    let shapeRepId: number;
+
+    // Use mesh data if available, otherwise fall back to bounding box
+    if (meshData && meshData.vertices.length > 0 && meshData.indices.length > 0) {
+      // Create FacetedBrep from mesh data
+      const brepId = this.createFacetedBrep(meshData.vertices, meshData.indices);
+      shapeRepId = this.createShapeRepresentation(brepId, 'Body', 'Brep');
+    } else {
+      // Fallback: Create rectangular profile for bounding box
+      const profileId = this.createRectangleProfile(width, depth);
+      const solidId = this.createExtrudedSolid(profileId, height);
+      shapeRepId = this.createShapeRepresentation(solidId, 'Body', 'SweptSolid');
+    }
+
+    // Create product representation
+    const productRepId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: productRepId,
+      type: WebIFC.IFCPRODUCTDEFINITIONSHAPE,
+      Name: null,
+      Description: null,
+      Representations: [{ type: 5, value: shapeRepId }],
+    });
+
+    // Create furniture as IfcFurnishingElement
+    const furnitureIfcId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: furnitureIfcId,
+      type: WebIFC.IFCFURNISHINGELEMENT,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: { type: 1, value: furniture.name },
+      Description: furniture.furnitureData.category
+        ? { type: 1, value: furniture.furnitureData.category }
+        : null,
+      ObjectType: furniture.furnitureData.category
+        ? { type: 1, value: furniture.furnitureData.category }
+        : null,
+      ObjectPlacement: { type: 5, value: placementId },
+      Representation: { type: 5, value: productRepId },
+      Tag: null,
+    });
+
+    this.furnitureIds.set(furniture.id, furnitureIfcId);
+
+    // Create property sets
+    this.createPropertySets(furniture, furnitureIfcId);
+
+    // Assign to storey
+    if (storeyIfcId) {
+      this.createContainedInSpatialStructure(furnitureIfcId, storeyIfcId);
     }
   }
 
@@ -903,6 +1214,125 @@ export class IfcExporter {
     return profileId;
   }
 
+  private createCircleProfile(radius: number): number {
+    const profileId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: profileId,
+      type: WebIFC.IFCCIRCLEPROFILEDEF,
+      ProfileType: { type: 3, value: 'AREA' },
+      ProfileName: null,
+      Position: null,
+      Radius: { type: 4, value: radius },
+    });
+    return profileId;
+  }
+
+  /**
+   * Create an IfcFacetedBrep from triangulated mesh data
+   * @param vertices Flat array of vertex coordinates [x1,y1,z1, x2,y2,z2, ...]
+   * @param indices Flat array of triangle indices [v1,v2,v3, v4,v5,v6, ...]
+   */
+  private createFacetedBrep(vertices: number[], indices: number[]): number {
+    // Create all unique vertices as IfcCartesianPoints
+    const numVertices = vertices.length / 3;
+    const vertexIds: number[] = [];
+
+    for (let i = 0; i < numVertices; i++) {
+      // Input vertices are in Y-up coordinate system (from GLB/GLTF/OBJ)
+      const xIn = vertices[i * 3] ?? 0;
+      const yIn = vertices[i * 3 + 1] ?? 0; // Y is up in source
+      const zIn = vertices[i * 3 + 2] ?? 0;
+
+      // Convert Y-up to Z-up for IFC:
+      // X stays the same
+      // Y (up in source) becomes Z (up in IFC)
+      // Z (forward in source) becomes Y (forward in IFC)
+      const xIfc = xIn;
+      const yIfc = zIn;
+      const zIfc = yIn;
+
+      const pointId = this.getNextId();
+      this.ifcApi.WriteLine(this.modelId, {
+        expressID: pointId,
+        type: WebIFC.IFCCARTESIANPOINT,
+        Coordinates: [
+          { type: 4, value: xIfc },
+          { type: 4, value: yIfc },
+          { type: 4, value: zIfc },
+        ],
+      });
+      vertexIds.push(pointId);
+    }
+
+    // Create faces from triangles
+    const faceIds: number[] = [];
+    const numTriangles = indices.length / 3;
+
+    for (let i = 0; i < numTriangles; i++) {
+      const i0 = indices[i * 3] ?? 0;
+      const i1 = indices[i * 3 + 1] ?? 0;
+      const i2 = indices[i * 3 + 2] ?? 0;
+
+      // Get vertex IDs for this triangle
+      const v0 = vertexIds[i0];
+      const v1 = vertexIds[i1];
+      const v2 = vertexIds[i2];
+
+      if (v0 === undefined || v1 === undefined || v2 === undefined) {
+        continue; // Skip invalid triangles
+      }
+
+      // Create IfcPolyLoop with 3 vertices
+      const polyLoopId = this.getNextId();
+      this.ifcApi.WriteLine(this.modelId, {
+        expressID: polyLoopId,
+        type: WebIFC.IFCPOLYLOOP,
+        Polygon: [
+          { type: 5, value: v0 },
+          { type: 5, value: v1 },
+          { type: 5, value: v2 },
+        ],
+      });
+
+      // Create IfcFaceOuterBound
+      const faceOuterBoundId = this.getNextId();
+      this.ifcApi.WriteLine(this.modelId, {
+        expressID: faceOuterBoundId,
+        type: WebIFC.IFCFACEOUTERBOUND,
+        Bound: { type: 5, value: polyLoopId },
+        Orientation: { type: 3, value: true },
+      });
+
+      // Create IfcFace
+      const faceId = this.getNextId();
+      this.ifcApi.WriteLine(this.modelId, {
+        expressID: faceId,
+        type: WebIFC.IFCFACE,
+        Bounds: [{ type: 5, value: faceOuterBoundId }],
+      });
+
+      faceIds.push(faceId);
+    }
+
+    // Create IfcClosedShell
+    const closedShellId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: closedShellId,
+      type: WebIFC.IFCCLOSEDSHELL,
+      CfsFaces: faceIds.map((id) => ({ type: 5, value: id })),
+    });
+
+    // Create IfcFacetedBrep
+    const brepId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: brepId,
+      type: WebIFC.IFCFACETEDBREP,
+      Outer: { type: 5, value: closedShellId },
+    });
+
+    return brepId;
+  }
+
   private createArbitraryProfile(points: { x: number; y: number }[]): number {
     // Create polyline from points
     const pointIds = points.map((p) => {
@@ -976,6 +1406,64 @@ export class IfcExporter {
     return solidId;
   }
 
+  /**
+   * Create an extruded solid at a specific Z height
+   */
+  private createExtrudedSolidAtHeight(profileId: number, height: number, zOffset: number): number {
+    // Extrusion direction (Z-up)
+    const directionId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: directionId,
+      type: WebIFC.IFCDIRECTION,
+      DirectionRatios: [{ type: 4, value: 0 }, { type: 4, value: 0 }, { type: 4, value: 1 }],
+    });
+
+    // Position for extrusion at Z offset
+    const originId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: originId,
+      type: WebIFC.IFCCARTESIANPOINT,
+      Coordinates: [{ type: 4, value: 0 }, { type: 4, value: 0 }, { type: 4, value: zOffset }],
+    });
+
+    const positionId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: positionId,
+      type: WebIFC.IFCAXIS2PLACEMENT3D,
+      Location: { type: 5, value: originId },
+      Axis: null,
+      RefDirection: null,
+    });
+
+    const solidId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: solidId,
+      type: WebIFC.IFCEXTRUDEDAREASOLID,
+      SweptArea: { type: 5, value: profileId },
+      Position: { type: 5, value: positionId },
+      ExtrudedDirection: { type: 5, value: directionId },
+      Depth: { type: 4, value: height },
+    });
+
+    return solidId;
+  }
+
+  /**
+   * Create shape representation with multiple solid items
+   */
+  private createMultiSolidShapeRepresentation(solidIds: number[]): number {
+    const repId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: repId,
+      type: WebIFC.IFCSHAPEREPRESENTATION,
+      ContextOfItems: { type: 5, value: this.geometricContextId },
+      RepresentationIdentifier: { type: 1, value: 'Body' },
+      RepresentationType: { type: 1, value: 'SweptSolid' },
+      Items: solidIds.map((id) => ({ type: 5, value: id })),
+    });
+    return repId;
+  }
+
   private createShapeRepresentation(
     itemId: number,
     identifier: string,
@@ -1015,6 +1503,116 @@ export class IfcExporter {
       guid += chars[Math.floor(Math.random() * 64)];
     }
     return guid;
+  }
+
+  /**
+   * Convert a property value to a string for IFC export
+   * Returns null if the value cannot be converted
+   */
+  private convertToIfcString(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+
+    const valueType = typeof value;
+
+    if (valueType === 'string') {
+      const str = value as string;
+      // Skip empty strings
+      if (str.trim() === '') return null;
+      return str;
+    }
+
+    if (valueType === 'number') {
+      const num = value as number;
+      // Skip NaN and Infinity
+      if (!Number.isFinite(num)) return null;
+      return String(num);
+    }
+
+    if (valueType === 'boolean') {
+      return value ? 'true' : 'false';
+    }
+
+    // Skip objects, arrays, functions, symbols, etc.
+    return null;
+  }
+
+  /**
+   * Create IFC property sets and link them to an element
+   * @param element The BIM element with property sets
+   * @param elementIfcId The IFC entity ID of the element
+   */
+  private createPropertySets(element: BimElement, elementIfcId: number): void {
+    if (!element.properties || element.properties.length === 0) return;
+
+    for (const pset of element.properties) {
+      // Skip if pset or pset.name is invalid
+      if (!pset || !pset.name || typeof pset.name !== 'string') continue;
+      if (!pset.properties || typeof pset.properties !== 'object') continue;
+
+      const psetName = String(pset.name).trim();
+      if (psetName === '') continue;
+
+      const propertyIds: number[] = [];
+
+      // Create IfcPropertySingleValue for each property
+      for (const [key, value] of Object.entries(pset.properties)) {
+        // Validate key
+        if (!key || typeof key !== 'string') continue;
+        const keyStr = String(key).trim();
+        if (keyStr === '') continue;
+
+        // Convert value to string
+        const valueStr = this.convertToIfcString(value);
+        if (valueStr === null) continue;
+
+        try {
+          const propertyId = this.getNextId();
+
+          this.ifcApi.WriteLine(this.modelId, {
+            expressID: propertyId,
+            type: WebIFC.IFCPROPERTYSINGLEVALUE,
+            Name: { type: 1, value: keyStr },
+            Description: null,
+            NominalValue: { type: 1, value: valueStr },
+            Unit: null,
+          });
+          propertyIds.push(propertyId);
+        } catch (err) {
+          console.warn(`[IFC Export] Skipping property "${keyStr}": ${err}`);
+        }
+      }
+
+      if (propertyIds.length === 0) continue;
+
+      try {
+        // Create IfcPropertySet
+        const psetId = this.getNextId();
+        this.ifcApi.WriteLine(this.modelId, {
+          expressID: psetId,
+          type: WebIFC.IFCPROPERTYSET,
+          GlobalId: { type: 1, value: this.generateGuid() },
+          OwnerHistory: null,
+          Name: { type: 1, value: psetName },
+          Description: null,
+          HasProperties: propertyIds.map((id) => ({ type: 5, value: id })),
+        });
+
+        // Create IfcRelDefinesByProperties to link property set to element
+        const relDefinesId = this.getNextId();
+        this.ifcApi.WriteLine(this.modelId, {
+          expressID: relDefinesId,
+          type: WebIFC.IFCRELDEFINESBYPROPERTIES,
+          GlobalId: { type: 1, value: this.generateGuid() },
+          OwnerHistory: null,
+          Name: null,
+          Description: null,
+          RelatedObjects: [{ type: 5, value: elementIfcId }],
+          RelatingPropertyDefinition: { type: 5, value: psetId },
+        });
+      } catch (err) {
+        console.warn(`[IFC Export] Skipping property set "${psetName}": ${err}`);
+      }
+    }
   }
 }
 

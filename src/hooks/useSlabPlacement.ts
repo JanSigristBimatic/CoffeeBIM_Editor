@@ -1,7 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { ThreeEvent } from '@react-three/fiber';
 import { useToolStore, useProjectStore } from '@/store';
 import { useSnap, SNAP_TOLERANCE } from './useSnap';
+import { useDistanceInput } from './useDistanceInput';
 import { distance2D } from '@/lib/geometry/math';
 import type { Point2D } from '@/types/geometry';
 
@@ -11,6 +12,7 @@ const CLOSE_DISTANCE = SNAP_TOLERANCE;
 /**
  * Hook for handling slab (floor plan) placement interactions
  * Polygon drawing: click to add points, double-click or click near start to close
+ * Supports distance input for precise segment lengths
  */
 export function useSlabPlacement() {
   const {
@@ -20,9 +22,21 @@ export function useSlabPlacement() {
     setSlabPreviewPoint,
     resetSlabPlacement,
     openSlabCompletionDialog,
+    setCursorPosition,
   } = useToolStore();
   const { activeStoreyId } = useProjectStore();
   const { snapFromEvent } = useSnap();
+
+  // Use distance input hook
+  const {
+    isActive: isDistanceInputActive,
+    inputValue: distanceInputValue,
+    initializeDistanceInput,
+    updateDirection,
+    handleKeyDown: handleDistanceKeyDown,
+    clearDistanceInput,
+    getDistanceTargetPoint,
+  } = useDistanceInput();
 
   /**
    * Check if a point is close to the first point (for closing the polygon)
@@ -60,6 +74,18 @@ export function useSlabPlacement() {
   }, [activeStoreyId, slabPlacement.points, openSlabCompletionDialog, resetSlabPlacement]);
 
   /**
+   * Add a point to the slab polygon
+   */
+  const addPoint = useCallback(
+    (point: Point2D) => {
+      addSlabPoint(point);
+      // Initialize distance input with the new point as reference
+      initializeDistanceInput(point);
+    },
+    [addSlabPoint, initializeDistanceInput]
+  );
+
+  /**
    * Handle pointer down - add point or close polygon
    */
   const handlePointerDown = useCallback(
@@ -69,19 +95,46 @@ export function useSlabPlacement() {
 
       event.stopPropagation();
 
-      const result = snapFromEvent(event);
-      const point = result.point;
+      // Use last point as reference for ortho constraint
+      const lastPoint = slabPlacement.points[slabPlacement.points.length - 1];
+
+      // Determine the point to add
+      let point: Point2D;
+      if (isDistanceInputActive && lastPoint) {
+        const targetPoint = getDistanceTargetPoint();
+        if (targetPoint) {
+          point = targetPoint;
+        } else {
+          const result = snapFromEvent(event, lastPoint);
+          point = result.point;
+        }
+      } else {
+        const result = snapFromEvent(event, lastPoint);
+        point = result.point;
+      }
 
       // Check if we should close the polygon
       if (isCloseToStart(point)) {
+        clearDistanceInput();
         completeSlab();
         return;
       }
 
-      // Add the point
-      addSlabPoint(point);
+      // Clear distance input and add the point
+      clearDistanceInput();
+      addPoint(point);
     },
-    [activeTool, snapFromEvent, isCloseToStart, completeSlab, addSlabPoint]
+    [
+      activeTool,
+      slabPlacement.points,
+      isDistanceInputActive,
+      snapFromEvent,
+      isCloseToStart,
+      completeSlab,
+      addPoint,
+      clearDistanceInput,
+      getDistanceTargetPoint,
+    ]
   );
 
   /**
@@ -100,16 +153,50 @@ export function useSlabPlacement() {
 
   /**
    * Handle pointer move - update preview
+   * Also updates cursor position for snap preview before first point
+   * Updates direction for distance input
    */
   const handlePointerMove = useCallback(
     (event: ThreeEvent<PointerEvent>) => {
       if (activeTool !== 'slab') return;
-      if (slabPlacement.points.length === 0) return;
 
-      const result = snapFromEvent(event);
-      setSlabPreviewPoint(result.point);
+      // Always update cursor position for snap indicator (even before first point)
+      const cursorResult = snapFromEvent(event);
+      setCursorPosition(cursorResult.point);
+
+      // Only update preview point if we have points
+      if (slabPlacement.points.length > 0) {
+        // Use last point as reference for ortho constraint
+        const lastPoint = slabPlacement.points[slabPlacement.points.length - 1];
+        const result = snapFromEvent(event, lastPoint);
+
+        // Update direction for distance input
+        if (lastPoint) {
+          updateDirection(lastPoint, result.point);
+        }
+
+        // If distance input is active, use the calculated target point for preview
+        if (isDistanceInputActive) {
+          const targetPoint = getDistanceTargetPoint();
+          if (targetPoint) {
+            setSlabPreviewPoint(targetPoint);
+            return;
+          }
+        }
+
+        setSlabPreviewPoint(result.point);
+      }
     },
-    [activeTool, slabPlacement.points.length, snapFromEvent, setSlabPreviewPoint]
+    [
+      activeTool,
+      slabPlacement.points,
+      isDistanceInputActive,
+      snapFromEvent,
+      setSlabPreviewPoint,
+      setCursorPosition,
+      updateDirection,
+      getDistanceTargetPoint,
+    ]
   );
 
   /**
@@ -117,7 +204,61 @@ export function useSlabPlacement() {
    */
   const cancelPlacement = useCallback(() => {
     resetSlabPlacement();
-  }, [resetSlabPlacement]);
+    clearDistanceInput();
+  }, [resetSlabPlacement, clearDistanceInput]);
+
+  /**
+   * Handle keyboard events for distance input
+   */
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (activeTool !== 'slab') return;
+      if (slabPlacement.points.length === 0) return;
+
+      const result = handleDistanceKeyDown(e);
+
+      // If Enter was pressed and confirmed, add the point
+      if (result.confirmed) {
+        const targetPoint = getDistanceTargetPoint();
+        if (targetPoint) {
+          // Check if we should close the polygon
+          if (isCloseToStart(targetPoint)) {
+            clearDistanceInput();
+            completeSlab();
+          } else {
+            clearDistanceInput();
+            addPoint(targetPoint);
+          }
+        }
+      }
+    },
+    [
+      activeTool,
+      slabPlacement.points.length,
+      handleDistanceKeyDown,
+      getDistanceTargetPoint,
+      isCloseToStart,
+      completeSlab,
+      addPoint,
+      clearDistanceInput,
+    ]
+  );
+
+  // Register keyboard event listener for distance input
+  useEffect(() => {
+    if (activeTool !== 'slab') return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Don't handle if typing in an input field
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      handleKeyDown(e);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeTool, handleKeyDown]);
 
   return {
     handlePointerDown,
@@ -128,5 +269,8 @@ export function useSlabPlacement() {
     points: slabPlacement.points,
     previewPoint: slabPlacement.previewPoint,
     pointCount: slabPlacement.points.length,
+    // Distance input state
+    isDistanceInputActive,
+    distanceInputValue,
   };
 }

@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { ViewMode } from '@/types/tools';
+import type { SnapSettings } from '@/types/geometry';
+import type { Vector3 } from '@/types/geometry';
 
 interface ViewState {
   viewMode: ViewMode;
@@ -8,6 +10,9 @@ interface ViewState {
   gridSize: number; // Grid cell size in meters
   snapToGrid: boolean;
   snapSize: number; // Snap increment in meters
+  snapSettings: SnapSettings;
+  // Camera focus
+  focusTarget: Vector3 | null;
 }
 
 interface ViewActions {
@@ -21,7 +26,28 @@ interface ViewActions {
   setSnapToGrid: (snap: boolean) => void;
   toggleSnapToGrid: () => void;
   setSnapSize: (size: number) => void;
+  // Snap settings
+  setSnapSettings: (settings: Partial<SnapSettings>) => void;
+  toggleSnapEndpoint: () => void;
+  toggleSnapMidpoint: () => void;
+  toggleSnapPerpendicular: () => void;
+  toggleSnapNearest: () => void;
+  toggleSnapGrid: () => void;
+  toggleSnapOrthogonal: () => void;
+  // Camera focus
+  focusOnPosition: (target: Vector3) => void;
+  clearFocusTarget: () => void;
 }
+
+const defaultSnapSettings: SnapSettings = {
+  enabled: true,
+  endpoint: true,
+  midpoint: true,
+  perpendicular: true,
+  nearest: true,
+  grid: true,
+  orthogonal: false,
+};
 
 export const useViewStore = create<ViewState & ViewActions>((set) => ({
   viewMode: '3d',
@@ -30,6 +56,8 @@ export const useViewStore = create<ViewState & ViewActions>((set) => ({
   gridSize: 1, // 1 meter
   snapToGrid: true,
   snapSize: 0.1, // 10 cm
+  snapSettings: defaultSnapSettings,
+  focusTarget: null,
 
   setViewMode: (mode) => set({ viewMode: mode }),
 
@@ -59,7 +87,51 @@ export const useViewStore = create<ViewState & ViewActions>((set) => ({
   toggleSnapToGrid: () =>
     set((state) => ({
       snapToGrid: !state.snapToGrid,
+      snapSettings: {
+        ...state.snapSettings,
+        enabled: !state.snapToGrid,
+      },
     })),
 
   setSnapSize: (size) => set({ snapSize: size }),
+
+  // Snap settings
+  setSnapSettings: (settings) =>
+    set((state) => ({
+      snapSettings: { ...state.snapSettings, ...settings },
+    })),
+
+  toggleSnapEndpoint: () =>
+    set((state) => ({
+      snapSettings: { ...state.snapSettings, endpoint: !state.snapSettings.endpoint },
+    })),
+
+  toggleSnapMidpoint: () =>
+    set((state) => ({
+      snapSettings: { ...state.snapSettings, midpoint: !state.snapSettings.midpoint },
+    })),
+
+  toggleSnapPerpendicular: () =>
+    set((state) => ({
+      snapSettings: { ...state.snapSettings, perpendicular: !state.snapSettings.perpendicular },
+    })),
+
+  toggleSnapNearest: () =>
+    set((state) => ({
+      snapSettings: { ...state.snapSettings, nearest: !state.snapSettings.nearest },
+    })),
+
+  toggleSnapGrid: () =>
+    set((state) => ({
+      snapSettings: { ...state.snapSettings, grid: !state.snapSettings.grid },
+    })),
+
+  toggleSnapOrthogonal: () =>
+    set((state) => ({
+      snapSettings: { ...state.snapSettings, orthogonal: !state.snapSettings.orthogonal },
+    })),
+
+  // Camera focus
+  focusOnPosition: (target) => set({ focusTarget: target }),
+  clearFocusTarget: () => set({ focusTarget: null }),
 }));

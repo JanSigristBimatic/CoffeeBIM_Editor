@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { Mesh, Shape, ExtrudeGeometry, MeshStandardMaterial } from 'three';
-import { useSelectionStore } from '@/store';
 import type { BimElement } from '@/types/bim';
+import { useDragElement } from '../TransformGizmo';
 
 interface SlabMeshProps {
   element: BimElement;
@@ -14,7 +14,7 @@ const SLAB_COLOR_SELECTED = '#93c5fd'; // Blue-300
 
 export function SlabMesh({ element, selected }: SlabMeshProps) {
   const meshRef = useRef<Mesh>(null);
-  const { select } = useSelectionStore();
+  const { handlers } = useDragElement(element);
 
   const { slabData } = element;
 
@@ -27,23 +27,21 @@ export function SlabMesh({ element, selected }: SlabMeshProps) {
     const { outline, thickness } = slabData;
 
     // Create shape from outline points
-    // Note: We negate Y because the shape is in XY plane,
-    // and after rotation -90° around X, Y becomes -Z.
-    // By negating, we get the correct world Z coordinate.
+    // Z-up: XY plane is horizontal, shape lies flat at Z=0
     const shape = new Shape();
     const firstPoint = outline[0];
     if (!firstPoint) return null;
 
-    shape.moveTo(firstPoint.x, -firstPoint.y);
+    shape.moveTo(firstPoint.x, firstPoint.y);
     for (let i = 1; i < outline.length; i++) {
       const pt = outline[i];
       if (pt) {
-        shape.lineTo(pt.x, -pt.y);
+        shape.lineTo(pt.x, pt.y);
       }
     }
     shape.closePath();
 
-    // Extrude downward (into the floor)
+    // Extrude downward (into the floor) along -Z
     const extrudeSettings = {
       steps: 1,
       depth: thickness,
@@ -51,6 +49,9 @@ export function SlabMesh({ element, selected }: SlabMeshProps) {
     };
 
     const geo = new ExtrudeGeometry(shape, extrudeSettings);
+
+    // Move geometry down so top surface is at Z=0
+    geo.translate(0, 0, -thickness);
 
     return geo;
   }, [slabData]);
@@ -64,25 +65,18 @@ export function SlabMesh({ element, selected }: SlabMeshProps) {
     });
   }, [selected]);
 
-  // Handle click
-  const handleClick = (e: { stopPropagation: () => void }) => {
-    e.stopPropagation();
-    select(element.id);
-  };
-
   if (!geometry || !slabData) return null;
 
-  // Position: rotate to lie flat, then position at floor level
-  // Shape is in XY plane, we rotate it to XZ plane (flat on ground)
-  // Move down by thickness so top surface is at Y=0
+  // Z-up: XY plane is horizontal, no rotation needed
+  // Geometry is already translated so top surface is at Z=0
   return (
     <mesh
       ref={meshRef}
       geometry={geometry}
       material={material}
-      position={[0, -slabData.thickness, 0]}
-      rotation={[-Math.PI / 2, 0, 0]}
-      onClick={handleClick}
+      position={[0, 0, 0]}
+      rotation={[0, 0, 0]}
+      {...handlers}
       receiveShadow
     />
   );

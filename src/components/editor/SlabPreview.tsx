@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { Line } from '@react-three/drei';
+import { Line, Html } from '@react-three/drei';
 import { useToolStore } from '@/store';
 
 const PREVIEW_COLOR = '#3b82f6'; // Blue
@@ -10,20 +10,21 @@ const CLOSE_COLOR = '#ef4444'; // Red (when about to close)
 /**
  * Visual preview during slab polygon drawing
  * Shows placed points, connecting lines, and preview line to cursor
+ * Includes distance label for the current segment
  */
 export function SlabPreview() {
-  const { activeTool, slabPlacement } = useToolStore();
+  const { activeTool, slabPlacement, distanceInput } = useToolStore();
 
   const { points, previewPoint } = slabPlacement;
 
   // All hooks must be called before any conditional returns
-  // Build line points (convert 2D to 3D)
+  // Build line points (convert 2D to 3D, Z-up)
   const linePoints: [number, number, number][] = useMemo(() => {
-    const pts: [number, number, number][] = points.map((p) => [p.x, 0.02, p.y]);
+    const pts: [number, number, number][] = points.map((p) => [p.x, p.y, 0.02]);
 
     // Add preview point if available
     if (previewPoint) {
-      pts.push([previewPoint.x, 0.02, previewPoint.y]);
+      pts.push([previewPoint.x, previewPoint.y, 0.02]);
     }
 
     return pts;
@@ -39,15 +40,15 @@ export function SlabPreview() {
     return Math.sqrt(dx * dx + dy * dy) < 0.3;
   }, [points, previewPoint]);
 
-  // Closed polygon preview (when we have 3+ points)
+  // Closed polygon preview (when we have 3+ points, Z-up)
   const closingLine: [number, number, number][] | null = useMemo(() => {
     if (points.length < 2) return null;
     const lastPoint = points[points.length - 1];
     const firstPoint = points[0];
     if (!lastPoint || !firstPoint) return null;
     return [
-      [lastPoint.x, 0.02, lastPoint.y],
-      [firstPoint.x, 0.02, firstPoint.y],
+      [lastPoint.x, lastPoint.y, 0.02],
+      [firstPoint.x, firstPoint.y, 0.02],
     ];
   }, [points]);
 
@@ -80,12 +81,11 @@ export function SlabPreview() {
         />
       )}
 
-      {/* Point markers */}
+      {/* Point markers (Z-up: no rotation needed) */}
       {points.map((point, index) => (
         <mesh
           key={index}
-          position={[point.x, 0.03, point.y]}
-          rotation={[-Math.PI / 2, 0, 0]}
+          position={[point.x, point.y, 0.03]}
         >
           <circleGeometry args={[index === 0 ? 0.12 : 0.08, 16]} />
           <meshBasicMaterial
@@ -94,11 +94,10 @@ export function SlabPreview() {
         </mesh>
       ))}
 
-      {/* Preview point marker */}
+      {/* Preview point marker (Z-up: no rotation needed) */}
       {previewPoint && (
         <mesh
-          position={[previewPoint.x, 0.03, previewPoint.y]}
-          rotation={[-Math.PI / 2, 0, 0]}
+          position={[previewPoint.x, previewPoint.y, 0.03]}
         >
           <ringGeometry args={[0.06, 0.1, 16]} />
           <meshBasicMaterial
@@ -113,6 +112,43 @@ export function SlabPreview() {
       {points.length >= 3 && (
         <SlabFillPreview points={points} />
       )}
+
+      {/* Distance label for current segment */}
+      {points.length > 0 && previewPoint && (() => {
+        const lastPoint = points[points.length - 1];
+        if (!lastPoint) return null;
+
+        const midX = (lastPoint.x + previewPoint.x) / 2;
+        const midY = (lastPoint.y + previewPoint.y) / 2;
+        const dx = previewPoint.x - lastPoint.x;
+        const dy = previewPoint.y - lastPoint.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < 0.1) return null;
+
+        return (
+          <Html
+            position={[midX, midY, 0.1]}
+            center
+            style={{ pointerEvents: 'none' }}
+          >
+            <div
+              style={{
+                background: distanceInput.active ? '#3b82f6' : 'rgba(0, 0, 0, 0.75)',
+                color: 'white',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                whiteSpace: 'nowrap',
+                border: distanceInput.active ? '1px solid #60a5fa' : 'none',
+              }}
+            >
+              {distance.toFixed(2)} m
+            </div>
+          </Html>
+        );
+      })()}
     </group>
   );
 }
@@ -125,26 +161,24 @@ function SlabFillPreview({ points }: { points: { x: number; y: number }[] }) {
     const firstPoint = points[0];
     if (!firstPoint) return null;
 
-    // Negate Y to correct for coordinate transform after rotation
+    // Z-up: Shape lies in XY plane, no rotation needed
     const shape = new THREE.Shape();
-    shape.moveTo(firstPoint.x, -firstPoint.y);
+    shape.moveTo(firstPoint.x, firstPoint.y);
     for (let i = 1; i < points.length; i++) {
       const pt = points[i];
       if (pt) {
-        shape.lineTo(pt.x, -pt.y);
+        shape.lineTo(pt.x, pt.y);
       }
     }
     shape.closePath();
 
-    const geo = new THREE.ShapeGeometry(shape);
-    geo.rotateX(-Math.PI / 2);
-    return geo;
+    return new THREE.ShapeGeometry(shape);
   }, [points]);
 
   if (!geometry) return null;
 
   return (
-    <mesh geometry={geometry} position={[0, 0.01, 0]}>
+    <mesh geometry={geometry} position={[0, 0, 0.01]}>
       <meshBasicMaterial
         color="#3b82f6"
         transparent

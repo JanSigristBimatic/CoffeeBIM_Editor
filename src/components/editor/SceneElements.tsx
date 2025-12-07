@@ -1,5 +1,5 @@
 import { useElementStore, useProjectStore, useSelectionStore } from '@/store';
-import { WallMesh, SlabMesh, DoorMesh } from './meshes';
+import { WallMesh, SlabMesh, DoorMesh, WindowMesh, ColumnMesh, CounterMesh, FurnitureMesh } from './meshes';
 import type { BimElement } from '@/types/bim';
 
 /**
@@ -19,7 +19,11 @@ export function SceneElements() {
   return (
     <group name="scene-elements">
       {elements.map((element) => (
-        <ElementMesh key={element.id} element={element} selected={isSelected(element.id)} />
+        <ElementMesh
+          key={element.id}
+          element={element}
+          selected={isSelected(element.id)}
+        />
       ))}
     </group>
   );
@@ -40,16 +44,15 @@ function ElementMesh({ element, selected }: ElementMeshProps) {
     case 'door':
       return <DoorMesh element={element} selected={selected} />;
     case 'window':
-      // TODO: Implement WindowMesh
-      return null;
+      return <WindowMesh element={element} selected={selected} />;
     case 'column':
-      // TODO: Implement ColumnMesh
-      return null;
+      return <ColumnMesh element={element} selected={selected} />;
     case 'slab':
       return <SlabMesh element={element} selected={selected} />;
+    case 'counter':
+      return <CounterMesh element={element} isSelected={selected} />;
     case 'furniture':
-      // TODO: Implement FurnitureMesh
-      return null;
+      return <FurnitureMesh element={element} selected={selected} />;
     default:
       console.warn(`Unknown element type: ${element.type}`);
       return null;

@@ -3,6 +3,7 @@ import { BoxGeometry, Euler } from 'three';
 import { useToolStore, useElementStore } from '@/store';
 import { DimensionLine } from '@/components/three';
 import { usePreviewMaterial, getPreviewColor } from '@/components/three';
+import { DoorSwingArc } from './meshes';
 
 /**
  * Shows a preview of the door being placed on a wall
@@ -32,28 +33,28 @@ export function DoorPreview() {
     const dy = endPoint.y - startPoint.y;
     const wallLength = Math.sqrt(dx * dx + dy * dy);
 
-    // Position along wall
+    // Position along wall (Z-up: x, y are ground plane)
     const x = startPoint.x + dx * previewPosition;
-    const z = startPoint.y + dy * previewPosition;
+    const y = startPoint.y + dy * previewPosition;
 
-    // Wall angle
+    // Wall angle (rotation around Z axis)
     const angle = Math.atan2(dy, dx);
 
-    // Wall start and end positions in 3D
+    // Wall start and end positions in 3D (Z-up)
     const wallStartX = startPoint.x;
-    const wallStartZ = startPoint.y;
+    const wallStartY = startPoint.y;
     const wallEndX = endPoint.x;
-    const wallEndZ = endPoint.y;
+    const wallEndY = endPoint.y;
 
     return {
-      position: { x, z },
+      position: { x, y },
       angle,
       wallLength,
       wallHeight,
       wallStartX,
-      wallStartZ,
+      wallStartY,
       wallEndX,
-      wallEndZ,
+      wallEndY,
     };
   }, [hostWall, previewPosition]);
 
@@ -71,20 +72,20 @@ export function DoorPreview() {
   }
 
   const hw = params.width / 2;
-  const dimensionY = 0.1; // Height above ground for dimension lines
+  const dimensionZ = 0.1; // Height above ground for dimension lines (Z-up)
 
-  // Calculate dimension line endpoints
+  // Calculate dimension line endpoints (Z-up: X, Y are ground plane)
   const doorLeftX = transform.position.x - Math.cos(transform.angle) * hw;
-  const doorLeftZ = transform.position.z - Math.sin(transform.angle) * hw;
+  const doorLeftY = transform.position.y - Math.sin(transform.angle) * hw;
   const doorRightX = transform.position.x + Math.cos(transform.angle) * hw;
-  const doorRightZ = transform.position.z + Math.sin(transform.angle) * hw;
+  const doorRightY = transform.position.y + Math.sin(transform.angle) * hw;
 
   return (
     <group renderOrder={999}>
-      {/* Door preview mesh */}
+      {/* Door preview mesh (Z-up: x, y ground, z height) */}
       <group
-        position={[transform.position.x, params.height / 2, transform.position.z]}
-        rotation={new Euler(0, -transform.angle, 0)}
+        position={[transform.position.x, transform.position.y, params.height / 2]}
+        rotation={new Euler(Math.PI / 2, 0, transform.angle, 'ZXY')}
       >
         <mesh geometry={doorGeometry} material={previewMaterial} renderOrder={999} />
 
@@ -95,20 +96,33 @@ export function DoorPreview() {
         </lineSegments>
       </group>
 
-      {/* Distance indicators using reusable DimensionLine */}
+      {/* Door swing arc preview (Z-up: arc lies in XY plane) */}
+      <group
+        position={[transform.position.x, transform.position.y, 0]}
+        rotation={new Euler(0, 0, transform.angle)}
+      >
+        <DoorSwingArc
+          doorWidth={params.width}
+          doorType={params.doorType}
+          swingDirection={params.swingDirection}
+          zOffset={0.02}
+        />
+      </group>
+
+      {/* Distance indicators using reusable DimensionLine (Z-up) */}
       {distanceFromLeft !== null && distanceFromRight !== null && (
         <group>
           {/* Left distance line (wall start to door left edge) */}
           <DimensionLine
-            start={[transform.wallStartX, dimensionY, transform.wallStartZ]}
-            end={[doorLeftX, dimensionY, doorLeftZ]}
+            start={[transform.wallStartX, transform.wallStartY, dimensionZ]}
+            end={[doorLeftX, doorLeftY, dimensionZ]}
             distance={distanceFromLeft}
           />
 
           {/* Right distance line (door right edge to wall end) */}
           <DimensionLine
-            start={[doorRightX, dimensionY, doorRightZ]}
-            end={[transform.wallEndX, dimensionY, transform.wallEndZ]}
+            start={[doorRightX, doorRightY, dimensionZ]}
+            end={[transform.wallEndX, transform.wallEndY, dimensionZ]}
             distance={distanceFromRight}
           />
         </group>
