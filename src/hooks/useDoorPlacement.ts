@@ -144,6 +144,7 @@ export function useDoorPlacement() {
           width: params.width,
           height: params.height,
           swingDirection: params.swingDirection,
+          swingSide: params.swingSide,
         });
 
         // Create opening for wall

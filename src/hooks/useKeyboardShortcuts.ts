@@ -10,7 +10,7 @@ export function useKeyboardShortcuts() {
   const { setActiveTool, cancelCurrentOperation } = useToolStore();
   const { getSelectedIds, clearSelection } = useSelectionStore();
   const { removeElements, moveElements } = useElementStore();
-  const { toggleGrid, cycleViewMode, toggleSnapOrthogonal, toggleDimensions, snapSize } = useViewStore();
+  const { toggleGrid, cycleViewMode, toggleSnapOrthogonal, toggleDimensions, snapSize, triggerZoomToExtents } = useViewStore();
   const { isLoaded: hasPdf, toggleVisible: togglePdfVisible } = usePdfUnderlayStore();
   const { selectedMeasurementId, removeSelectedMeasurement, cancelPlacement } = useMeasurementStore();
   const { undo, redo, canUndo, canRedo } = useHistory();
@@ -64,6 +64,13 @@ export function useKeyboardShortcuts() {
       if (!ctrl && shift && event.key.toLowerCase() === 's') {
         event.preventDefault();
         setActiveTool('stair');
+        return;
+      }
+
+      // Shift+Z - Zoom to extents
+      if (!ctrl && shift && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        triggerZoomToExtents();
         return;
       }
 
@@ -210,6 +217,7 @@ export function useKeyboardShortcuts() {
     toggleSnapOrthogonal,
     toggleDimensions,
     snapSize,
+    triggerZoomToExtents,
     hasPdf,
     togglePdfVisible,
     selectedMeasurementId,

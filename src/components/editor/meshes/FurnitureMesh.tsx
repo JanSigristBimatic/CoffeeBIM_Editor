@@ -157,12 +157,12 @@ function GltfModel({
           box.getSize(size);
           box.getCenter(center);
 
-          // Report bounds
+          // Report RAW bounds (without scale) - auto-scale will be calculated in handleBoundsCalculated
           if (onBoundsCalculated) {
             onBoundsCalculated({
-              width: size.x * scale,
-              depth: size.z * scale,
-              height: size.y * scale,
+              width: size.x,
+              depth: size.z,
+              height: size.y,
             });
           }
 
@@ -279,11 +279,12 @@ function ObjModel({
     const size = new Vector3();
     box.getSize(size);
 
+    // Report RAW bounds (without scale) - auto-scale will be calculated in handleBoundsCalculated
     if (onBoundsCalculated) {
       onBoundsCalculated({
-        width: size.x * scale,
-        depth: size.z * scale,
-        height: size.y * scale,
+        width: size.x,
+        depth: size.z,
+        height: size.y,
       });
     }
 
@@ -451,26 +452,55 @@ export function FurnitureMesh({ element, selected, isGhost = false, ghostOpacity
   }
 
   // Handle bounds update from loaded model
-  const handleBoundsCalculated = (bounds: { width: number; depth: number; height: number }) => {
+  const handleBoundsCalculated = (rawBounds: { width: number; depth: number; height: number }) => {
     if (!furnitureData) return;
+
+    const { targetDimensions } = furnitureData;
+
+    // If targetDimensions is set, keep them for 2D display (don't override with model bounds)
+    // The 3D model will use its own scale from furnitureData.scale
+    if (targetDimensions) {
+      // Debug logging
+      console.log('Model loaded with targetDimensions:', {
+        rawBounds,
+        targetDimensions,
+        currentScale: furnitureData.scale,
+        scaledModelSize: {
+          width: rawBounds.width * furnitureData.scale,
+          depth: rawBounds.depth * furnitureData.scale,
+          height: rawBounds.height * furnitureData.scale,
+        },
+      });
+
+      // Don't update dimensions - keep targetDimensions for 2D consistency
+      // The 3D model renders at its natural size * scale
+      return;
+    }
+
+    // No targetDimensions - legacy behavior: use raw bounds with current scale
+    const scaledBounds = {
+      width: rawBounds.width * furnitureData.scale,
+      depth: rawBounds.depth * furnitureData.scale,
+      height: rawBounds.height * furnitureData.scale,
+    };
 
     // Only update if dimensions are significantly different
     const threshold = 0.01;
     if (
-      Math.abs(bounds.width - furnitureData.width) > threshold ||
-      Math.abs(bounds.depth - furnitureData.depth) > threshold ||
-      Math.abs(bounds.height - furnitureData.height) > threshold
+      Math.abs(scaledBounds.width - furnitureData.width) > threshold ||
+      Math.abs(scaledBounds.depth - furnitureData.depth) > threshold ||
+      Math.abs(scaledBounds.height - furnitureData.height) > threshold
     ) {
       updateElement(element.id, {
         furnitureData: {
           ...furnitureData,
-          width: bounds.width,
-          depth: bounds.depth,
-          height: bounds.height,
+          width: scaledBounds.width,
+          depth: scaledBounds.depth,
+          height: scaledBounds.height,
         },
         geometry: {
           ...element.geometry,
-          height: bounds.height,
+          height: scaledBounds.height,
         },
       });
     }

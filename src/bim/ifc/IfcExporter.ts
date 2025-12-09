@@ -51,7 +51,7 @@ export class IfcExporter {
     elements: BimElement[]
   ): Promise<Uint8Array> {
     // Create new model
-    this.modelId = this.ifcApi.CreateModel({ schema: WebIFC.Schemas.IFC2X3 });
+    this.modelId = this.ifcApi.CreateModel({ schema: WebIFC.Schemas.IFC4 });
     this.expressIdCounter = 1;
 
     // Reset ID maps
@@ -1550,7 +1550,7 @@ export class IfcExporter {
       ObjectPlacement: { type: 5, value: placementId },
       Representation: { type: 5, value: productRepId },
       Tag: null,
-      ShapeType: { type: 3, value: 'STRAIGHT_RUN_STAIR' },
+      PredefinedType: { type: 3, value: 'STRAIGHT_RUN_STAIR' },
     });
 
     this.stairIds.set(stair.id, stairIfcId);

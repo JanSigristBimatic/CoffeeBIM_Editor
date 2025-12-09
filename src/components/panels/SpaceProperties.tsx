@@ -38,7 +38,7 @@ const GASTRO_CATEGORIES: { value: GastroSpaceCategory; label: string }[] = [
  * Shows room area, perimeter, volume and allows editing type
  */
 export function SpaceProperties({ element }: SpacePropertiesProps) {
-  const { updateElement, elements } = useElementStore();
+  const { updateElement, getAllElements } = useElementStore();
 
   const spaceData = element.spaceData;
 
@@ -90,10 +90,10 @@ export function SpaceProperties({ element }: SpacePropertiesProps) {
   const handleRecalculateNetArea = useCallback(() => {
     if (!spaceData) return;
 
-    const allElements = Object.values(elements);
+    const allElements = getAllElements();
     const updated = updateSpaceNetFloorArea(element, allElements);
     updateElement(element.id, updated);
-  }, [spaceData, element, elements, updateElement]);
+  }, [spaceData, element, getAllElements, updateElement]);
 
   if (!spaceData) {
     return <div className="text-sm text-muted-foreground">Raum-Daten nicht verfügbar</div>;

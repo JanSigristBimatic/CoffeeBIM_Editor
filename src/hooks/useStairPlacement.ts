@@ -31,30 +31,15 @@ export function useStairPlacement() {
     return storeys.find((s) => s.id === activeStoreyId);
   }, [storeys, activeStoreyId]);
 
-  // Get target storey from params (user-selected) or fallback to next storey
+  // Get target storey from params (user-selected only, no automatic fallback)
   const targetStorey = useMemo(() => {
-    // First try to use user-selected target storey
+    // Only use user-selected target storey
     if (stairPlacement.params.targetStoreyId) {
       return storeys.find((s) => s.id === stairPlacement.params.targetStoreyId) ?? null;
     }
-
-    // Fallback: find next storey above
-    if (!activeStorey) return null;
-
-    const sortedStoreys = [...storeys].sort((a, b) => a.elevation - b.elevation);
-    const activeIndex = sortedStoreys.findIndex((s) => s.id === activeStoreyId);
-
-    if (activeIndex >= 0 && activeIndex < sortedStoreys.length - 1) {
-      return sortedStoreys[activeIndex + 1];
-    }
-
-    // If no storey above, try storey below
-    if (activeIndex > 0) {
-      return sortedStoreys[activeIndex - 1];
-    }
-
+    // No automatic fallback - user can use manual height instead
     return null;
-  }, [storeys, activeStoreyId, activeStorey, stairPlacement.params.targetStoreyId]);
+  }, [storeys, stairPlacement.params.targetStoreyId]);
 
   // Determine if stair goes up or down
   const isGoingUp = useMemo(() => {
@@ -62,11 +47,14 @@ export function useStairPlacement() {
     return targetStorey.elevation > activeStorey.elevation;
   }, [activeStorey, targetStorey]);
 
-  // Calculate total rise between storeys (always positive)
+  // Calculate total rise - use storey difference if available, otherwise manual params
   const totalRise = useMemo(() => {
-    if (!activeStorey || !targetStorey) return 3.0; // Default 3m if no target
-    return Math.abs(targetStorey.elevation - activeStorey.elevation);
-  }, [activeStorey, targetStorey]);
+    if (activeStorey && targetStorey) {
+      return Math.abs(targetStorey.elevation - activeStorey.elevation);
+    }
+    // Use manual height from params
+    return stairPlacement.params.totalRise;
+  }, [activeStorey, targetStorey, stairPlacement.params.totalRise]);
 
   // Calculate preview steps based on total rise
   const previewSteps = useMemo(() => {
@@ -95,21 +83,19 @@ export function useStairPlacement() {
 
   /**
    * Create a stair at the specified position and direction
-   * Handles both upward and downward stairs
+   * Handles both upward and downward stairs, or manual height without target storey
    */
   const createStairElement = useCallback(
     (startPoint: Point2D, rotation: number) => {
-      if (!activeStoreyId || !activeStorey || !targetStorey) {
-        console.warn('No active or target storey selected');
+      if (!activeStoreyId || !activeStorey) {
+        console.warn('No active storey selected');
         return false;
       }
 
-      // Determine bottom and top storey based on direction
-      // For stairs going UP: active = bottom, target = top
-      // For stairs going DOWN: target = bottom, active = top
-      const bottomStoreyId = isGoingUp ? activeStoreyId : targetStorey.id;
-      const topStoreyId = isGoingUp ? targetStorey.id : activeStoreyId;
-      const bottomElevation = isGoingUp ? activeStorey.elevation : targetStorey.elevation;
+      // Determine storey IDs based on direction and target storey availability
+      const bottomStoreyId = isGoingUp ? activeStoreyId : (targetStorey?.id ?? activeStoreyId);
+      const topStoreyId = isGoingUp ? (targetStorey?.id ?? activeStoreyId) : activeStoreyId;
+      const bottomElevation = isGoingUp ? activeStorey.elevation : (targetStorey?.elevation ?? activeStorey.elevation);
 
       try {
         const stair = createStair({

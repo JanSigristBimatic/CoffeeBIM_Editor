@@ -24,7 +24,7 @@ import type {
 } from '@/types/tools';
 import type { Vector2D } from '@/types/geometry';
 import type { Point2D } from '@/types/geometry';
-import type { DoorType, WindowType, CounterType, StairType, WallAlignmentSide } from '@/types/bim';
+import type { DoorType, DoorSwingSide, WindowType, CounterType, StairType, WallAlignmentSide } from '@/types/bim';
 import {
   DEFAULT_DOOR_WIDTH,
   DEFAULT_DOOR_HEIGHT,
@@ -111,6 +111,7 @@ interface ToolActions {
   setDoorWidth: (width: number) => void;
   setDoorHeight: (height: number) => void;
   setDoorSwingDirection: (direction: 'left' | 'right') => void;
+  setDoorSwingSide: (swingSide: DoorSwingSide) => void;
   setDoorPreview: (
     hostWallId: string | null,
     position: number | null,
@@ -172,6 +173,7 @@ interface ToolActions {
   setStairParams: (params: Partial<StairPlacementParams>) => void;
   setStairType: (stairType: StairType) => void;
   setStairWidth: (width: number) => void;
+  setStairTotalRise: (totalRise: number) => void;
   setStairTargetStorey: (storeyId: string | null) => void;
   setStairCreateOpening: (createOpening: boolean) => void;
   setStairStartPoint: (point: Point2D | null) => void;
@@ -220,6 +222,7 @@ const initialDoorPlacementParams: DoorPlacementParams = {
   width: DEFAULT_DOOR_WIDTH,
   height: DEFAULT_DOOR_HEIGHT,
   swingDirection: 'left',
+  swingSide: 'inward',
 };
 
 const initialDoorPlacement: DoorPlacementState = {
@@ -345,6 +348,7 @@ const initialStairPlacementParams: StairPlacementParams = {
   stairType: 'straight',
   width: DEFAULT_STAIR_WIDTH,
   targetStoreyId: null,
+  totalRise: 3.0, // Default 3m height
   createOpening: true,
 };
 
@@ -680,6 +684,17 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
         params: {
           ...state.doorPlacement.params,
           swingDirection: direction,
+        },
+      },
+    })),
+
+  setDoorSwingSide: (swingSide) =>
+    set((state) => ({
+      doorPlacement: {
+        ...state.doorPlacement,
+        params: {
+          ...state.doorPlacement.params,
+          swingSide,
         },
       },
     })),
@@ -1072,6 +1087,17 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
         params: {
           ...state.stairPlacement.params,
           width,
+        },
+      },
+    })),
+
+  setStairTotalRise: (totalRise) =>
+    set((state) => ({
+      stairPlacement: {
+        ...state.stairPlacement,
+        params: {
+          ...state.stairPlacement.params,
+          totalRise,
         },
       },
     })),

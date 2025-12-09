@@ -84,6 +84,7 @@ export function useAssetPlacement() {
       // Convert rotation from degrees to radians
       const rotationRad = (rotation * Math.PI) / 180;
 
+      // Use catalog dimensions for 2D display, actual model scale for 3D
       const element = createFurniture({
         name: asset.name,
         category: furnitureCategory,
@@ -101,6 +102,12 @@ export function useAssetPlacement() {
         depth: asset.dimensions.depth * scale,
         height: asset.dimensions.height * scale,
         storeyId: activeStoreyId,
+        // Store target dimensions for reference (2D uses these)
+        targetDimensions: {
+          width: asset.dimensions.width * scale,
+          depth: asset.dimensions.depth * scale,
+          height: asset.dimensions.height * scale,
+        },
       });
 
       addElement(element);

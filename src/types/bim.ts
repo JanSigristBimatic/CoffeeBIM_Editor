@@ -409,6 +409,12 @@ export interface FurnitureData {
   depth: number;
   height: number;
   scale: number; // Uniform scale factor (default 1)
+  /** Target dimensions from asset catalog (in meters) for auto-scaling */
+  targetDimensions?: {
+    width: number;
+    depth: number;
+    height: number;
+  };
   /** Extracted mesh geometry for IFC export */
   meshData?: MeshData;
 }

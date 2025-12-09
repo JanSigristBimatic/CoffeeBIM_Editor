@@ -105,6 +105,7 @@ export function DoorPreview() {
           doorWidth={params.width}
           doorType={params.doorType}
           swingDirection={params.swingDirection}
+          swingSide={params.swingSide}
           zOffset={0.02}
         />
       </group>

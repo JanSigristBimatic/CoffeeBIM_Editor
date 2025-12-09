@@ -11,8 +11,12 @@ import { createDoor, createOpeningFromDoor } from '@/bim/elements/Door';
 import { createWindow, createOpeningFromWindow } from '@/bim/elements/Window';
 import { getPositionOnWall, calculateWallLength } from '@/bim/elements/Wall';
 import { createFurniture } from '@/bim/elements';
+import { createSpace } from '@/bim/elements/Space';
+import { detectSpaceAtPoint } from '@/bim/spaces';
 import { getAssetById, getAssetCategoryForItem, mapAssetCategoryToFurnitureCategory } from '@/lib/assets';
 import type { Point2D } from '@/types/geometry';
+import { GASTRO_SPACE_COLORS, GASTRO_SPACE_LABELS } from '@/types/bim';
+import type { GastroSpaceCategory } from '@/types/bim';
 import { calculatePolygonArea } from '@/lib/geometry/dimensions';
 import { distance2D } from '@/lib/geometry/math';
 import {
@@ -40,9 +44,39 @@ const STAIR_FILL = '#f5f5f5';
 const STAIR_ARROW_COLOR = '#444444';
 const SPACE_COLOR = '#666666';
 const SPACE_COLOR_SELECTED = '#FF6600';
-const SPACE_FILL_INTERNAL = 'rgba(135, 206, 235, 0.25)'; // Light blue
-const SPACE_FILL_EXTERNAL = 'rgba(144, 238, 144, 0.25)'; // Light green
-const SPACE_FILL_DEFAULT = 'rgba(211, 211, 211, 0.25)'; // Light gray
+const SPACE_OPACITY = 0.35; // Transparency for space fills
+
+/**
+ * Convert hex color to rgba with specified opacity
+ * Used for consistent space colors between 2D and 3D views
+ */
+function hexToRgba(hex: string, opacity: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+/**
+ * Get fill color for a space based on gastroCategory (priority) or spaceType (fallback)
+ * Matches the color logic in SpaceMesh.tsx for 3D consistency
+ */
+function getSpaceFillColor(gastroCategory: GastroSpaceCategory | undefined, spaceType: string | undefined): string {
+  // Priority: Use gastro category color if set (and not SONSTIGES)
+  if (gastroCategory && gastroCategory !== 'SONSTIGES') {
+    return hexToRgba(GASTRO_SPACE_COLORS[gastroCategory], SPACE_OPACITY);
+  }
+
+  // Fallback: Use IFC space type color
+  switch (spaceType) {
+    case 'EXTERNAL':
+      return hexToRgba('#90EE90', SPACE_OPACITY); // Light green
+    case 'INTERNAL':
+      return hexToRgba('#87CEEB', SPACE_OPACITY); // Light blue
+    default:
+      return hexToRgba('#D3D3D3', SPACE_OPACITY); // Light gray
+  }
+}
 const GRID_COLOR = '#e0e0e0';
 const GRID_COLOR_MAJOR = '#cccccc';
 
@@ -57,7 +91,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   const [dimensions, setDimensions] = useState({ width: propWidth ?? 800, height: propHeight ?? 600 });
 
   // Store hooks
-  const { cad2dZoom, cad2dPanX, cad2dPanY, setCad2dZoom, setCad2dPan, showGrid, gridSize, showDimensions, dimensionSettings, snapSettings } = useViewStore();
+  const { cad2dZoom, cad2dPanX, cad2dPanY, setCad2dZoom, setCad2dPan, showGrid, gridSize, showDimensions, dimensionSettings, snapSettings, zoomToExtentsTrigger } = useViewStore();
   const { getAllElements, getElementsByStorey, addElement, updateElement, getWallsForStorey } = useElementStore();
   const { selectedIds, select, clearSelection, toggleSelection } = useSelectionStore();
   const { activeStoreyId, storeys } = useProjectStore();
@@ -68,7 +102,6 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     setWallPreviewEndPoint,
     resetWallPlacement,
     setCursorPosition,
-    cancelCurrentOperation,
     // Slab placement
     slabPlacement,
     addSlabPoint,
@@ -96,9 +129,11 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     resetStairPlacement,
     // Door placement
     doorPlacement,
+    setDoorPreview,
     resetDoorPlacement,
     // Window placement
     windowPlacement,
+    setWindowPreview,
     resetWindowPlacement,
     // Asset placement
     assetPlacement,
@@ -127,18 +162,93 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Keyboard handler for Escape to cancel operations
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        cancelCurrentOperation();
-        setCursorWorldPos(null);
-      }
-    };
+  // Note: Escape key handling is done globally in useKeyboardShortcuts hook
+  // which properly cancels operations AND switches back to select tool
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cancelCurrentOperation]);
+  // Zoom to extents - calculate bounds of all elements and fit view
+  const lastZoomTrigger = useRef(0);
+  useEffect(() => {
+    if (zoomToExtentsTrigger === 0 || zoomToExtentsTrigger === lastZoomTrigger.current) return;
+    lastZoomTrigger.current = zoomToExtentsTrigger;
+
+    if (elements.length === 0) {
+      // No elements, reset to default view
+      setCad2dZoom(50);
+      setCad2dPan(0, 0);
+      return;
+    }
+
+    // Calculate bounding box of all elements
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+    for (const element of elements) {
+      const pos = element.placement.position;
+
+      if (element.type === 'wall' && element.wallData) {
+        const { startPoint, endPoint, thickness } = element.wallData;
+        minX = Math.min(minX, startPoint.x - thickness, endPoint.x - thickness);
+        maxX = Math.max(maxX, startPoint.x + thickness, endPoint.x + thickness);
+        minY = Math.min(minY, startPoint.y - thickness, endPoint.y - thickness);
+        maxY = Math.max(maxY, startPoint.y + thickness, endPoint.y + thickness);
+      } else if (element.type === 'slab' && element.slabData) {
+        for (const p of element.slabData.outline) {
+          minX = Math.min(minX, p.x);
+          maxX = Math.max(maxX, p.x);
+          minY = Math.min(minY, p.y);
+          maxY = Math.max(maxY, p.y);
+        }
+      } else if (element.type === 'space' && element.spaceData) {
+        for (const p of element.spaceData.boundaryPolygon) {
+          minX = Math.min(minX, p.x);
+          maxX = Math.max(maxX, p.x);
+          minY = Math.min(minY, p.y);
+          maxY = Math.max(maxY, p.y);
+        }
+      } else if (element.type === 'counter' && element.counterData) {
+        for (const p of element.counterData.path) {
+          minX = Math.min(minX, p.x);
+          maxX = Math.max(maxX, p.x);
+          minY = Math.min(minY, p.y);
+          maxY = Math.max(maxY, p.y);
+        }
+      } else {
+        // For other elements, use position with a default size
+        minX = Math.min(minX, pos.x - 0.5);
+        maxX = Math.max(maxX, pos.x + 0.5);
+        minY = Math.min(minY, pos.y - 0.5);
+        maxY = Math.max(maxY, pos.y + 0.5);
+      }
+    }
+
+    // Add padding (20%)
+    const padding = 0.2;
+    const boundsWidth = maxX - minX;
+    const boundsHeight = maxY - minY;
+    minX -= boundsWidth * padding;
+    maxX += boundsWidth * padding;
+    minY -= boundsHeight * padding;
+    maxY += boundsHeight * padding;
+
+    // Calculate center in world coordinates
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    // Calculate zoom to fit
+    const worldWidth = maxX - minX;
+    const worldHeight = maxY - minY;
+    const zoomX = dimensions.width / worldWidth;
+    const zoomY = dimensions.height / worldHeight;
+    const newZoom = Math.max(5, Math.min(zoomX, zoomY, 200)); // Clamp between 5 and 200
+
+    // Calculate pan to center the content
+    // worldToScreen: x * zoom + panX + width/2, -y * zoom + panY + height/2
+    // To center (centerX, centerY) at screen center: panX = -centerX * zoom, panY = centerY * zoom
+    const newPanX = -centerX * newZoom;
+    const newPanY = centerY * newZoom;
+
+    setCad2dZoom(newZoom);
+    setCad2dPan(newPanX, newPanY);
+  }, [zoomToExtentsTrigger, elements, dimensions, setCad2dZoom, setCad2dPan]);
 
   // World to screen coordinates
   const worldToScreen = useCallback(
@@ -377,6 +487,23 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     []
   );
 
+  // Get walls for current storey (used for door/window preview)
+  const wallsForPreview = activeStoreyId ? getWallsForStorey(activeStoreyId) : [];
+
+  // Find wall at point for preview (defined before handleMouseMove to avoid dependency issues)
+  const findWallAtPointForPreview = useCallback(
+    (point: Point2D): { wall: BimElement; position: number } | null => {
+      for (const wall of wallsForPreview) {
+        const position = getPositionOnWall(wall, point, 0.5);
+        if (position !== null) {
+          return { wall, position };
+        }
+      }
+      return null;
+    },
+    [wallsForPreview]
+  );
+
   const handleMouseMove = useCallback(
     (e: KonvaEventObject<MouseEvent>) => {
       if (isPanning) {
@@ -440,6 +567,34 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           setColumnPreview(snappedPos, true);
         } else if (activeTool === 'asset' && assetPlacement.params.assetId) {
           setAssetPreview(snappedPos, true);
+        } else if (activeTool === 'door' || activeTool === 'window') {
+          // Find wall at cursor position for door/window preview
+          const wallAtPoint = findWallAtPointForPreview(snappedPos);
+          if (wallAtPoint) {
+            const { wall, position } = wallAtPoint;
+            const wallLength = calculateWallLength(wall);
+            const elementWidth = activeTool === 'door' ? doorPlacement.params.width : windowPlacement.params.width;
+            const halfWidth = elementWidth / 2;
+            const distFromLeft = position * wallLength;
+            const distFromRight = wallLength - distFromLeft;
+
+            // Check if position is valid (not too close to edges)
+            const minEdgeDist = halfWidth + 0.02;
+            const isValid = distFromLeft >= minEdgeDist && distFromRight >= minEdgeDist;
+
+            if (activeTool === 'door') {
+              setDoorPreview(wall.id, position, distFromLeft, distFromRight, isValid);
+            } else {
+              setWindowPreview(wall.id, position, distFromLeft, distFromRight, isValid);
+            }
+          } else {
+            // No wall at cursor - clear preview
+            if (activeTool === 'door') {
+              setDoorPreview(null, null, null, null, false);
+            } else {
+              setWindowPreview(null, null, null, null, false);
+            }
+          }
         }
       }
     },
@@ -449,7 +604,8 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
      spacePlacement.points, setSpacePreviewPoint,
      counterPlacement.points, setCounterPreviewPoint,
      stairPlacement.startPoint, setStairPreviewEndPoint, setStairRotation,
-     setColumnPreview, assetPlacement.params.assetId, setAssetPreview]
+     setColumnPreview, assetPlacement.params.assetId, setAssetPreview,
+     findWallAtPointForPreview, doorPlacement.params.width, windowPlacement.params.width, setDoorPreview, setWindowPreview]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -593,6 +749,67 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     }
   }, [spacePlacement.points, addElement, activeStoreyId, resetSpacePlacement]);
 
+  // Handle space-detect tool click - automatic room detection
+  const handleSpaceDetectClick = useCallback(
+    (point: Point2D) => {
+      if (!activeStoreyId) {
+        console.warn('No active storey selected');
+        return;
+      }
+
+      // Get walls for current storey
+      const storeyWalls = getWallsForStorey(activeStoreyId);
+
+      if (storeyWalls.length < 3) {
+        console.warn('Need at least 3 walls to detect a space');
+        return;
+      }
+
+      // Detect space at clicked point using ray casting
+      const detectedSpace = detectSpaceAtPoint(point, storeyWalls);
+
+      if (!detectedSpace) {
+        console.log('No closed space found at this position');
+        return;
+      }
+
+      // Check if a space already exists with the same bounding walls
+      const existingSpaces = elements.filter(e => e.type === 'space');
+      const sameWallsSpace = existingSpaces.find((s) => {
+        if (!s.spaceData) return false;
+        const existingWallIds = new Set(s.spaceData.boundingWallIds);
+        const newWallIds = new Set(detectedSpace.boundingWallIds);
+        if (existingWallIds.size !== newWallIds.size) return false;
+        for (const id of existingWallIds) {
+          if (!newWallIds.has(id)) return false;
+        }
+        return true;
+      });
+
+      if (sameWallsSpace) {
+        console.log('This space already exists');
+        return;
+      }
+
+      // Get storey info for elevation and height
+      const storey = storeys.find(s => s.id === activeStoreyId);
+      const storeyElevation = storey?.elevation ?? 0;
+      const storeyHeight = storey?.height ?? DEFAULT_WALL_HEIGHT;
+
+      // Create the space element
+      const spaceElement = createSpace({
+        detectedSpace,
+        storeyId: activeStoreyId,
+        elevation: storeyElevation,
+        height: storeyHeight,
+      });
+
+      addElement(spaceElement);
+      console.log('Space detected and created:', spaceElement.name);
+    },
+    [activeStoreyId, getWallsForStorey, elements, storeys, addElement]
+  );
+
   // Handle counter tool click - path drawing
   const handleCounterClick = useCallback(
     (point: Point2D) => {
@@ -705,25 +922,24 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           return;
         }
 
-        // Find target storey (next storey above or below)
-        const sortedStoreys = [...storeys].sort((a, b) => a.elevation - b.elevation);
-        const activeIndex = sortedStoreys.findIndex((s) => s.id === activeStoreyId);
-        let targetStorey = stairPlacement.params.targetStoreyId
+        // Find target storey if specified
+        const targetStorey = stairPlacement.params.targetStoreyId
           ? storeys.find((s) => s.id === stairPlacement.params.targetStoreyId)
           : null;
 
-        if (!targetStorey && activeIndex >= 0 && activeIndex < sortedStoreys.length - 1) {
-          targetStorey = sortedStoreys[activeIndex + 1];
-        }
+        // Use storey difference if available, otherwise use manual totalRise from params
+        const totalRise = targetStorey
+          ? Math.abs(targetStorey.elevation - activeStorey.elevation)
+          : stairPlacement.params.totalRise;
 
-        if (!targetStorey) {
-          console.warn('No target storey found for stairs');
-          resetStairPlacement();
-          return;
-        }
+        const isGoingUp = targetStorey
+          ? targetStorey.elevation > activeStorey.elevation
+          : true; // Default to going up for manual height
 
-        const isGoingUp = targetStorey.elevation > activeStorey.elevation;
-        const totalRise = Math.abs(targetStorey.elevation - activeStorey.elevation);
+        // Determine storey IDs
+        const bottomStoreyId = isGoingUp ? activeStoreyId : (targetStorey?.id ?? activeStoreyId);
+        const topStoreyId = isGoingUp ? (targetStorey?.id ?? activeStoreyId) : activeStoreyId;
+        const bottomElevation = isGoingUp ? activeStorey.elevation : (targetStorey?.elevation ?? activeStorey.elevation);
 
         try {
           const stair = createStair({
@@ -731,15 +947,15 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
             rotation: stairPlacement.rotation,
             width: stairPlacement.params.width,
             totalRise,
-            bottomStoreyId: isGoingUp ? activeStoreyId : targetStorey.id,
-            topStoreyId: isGoingUp ? targetStorey.id : activeStoreyId,
-            bottomElevation: isGoingUp ? activeStorey.elevation : targetStorey.elevation,
+            bottomStoreyId,
+            topStoreyId,
+            bottomElevation,
             stairType: stairPlacement.params.stairType,
             createOpening: stairPlacement.params.createOpening,
           });
 
           addElement(stair);
-          console.log('Stair placed');
+          console.log('Stair placed with height:', totalRise, 'm');
           resetStairPlacement();
         } catch (error) {
           console.error('Could not create stair:', error);
@@ -801,6 +1017,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           width: doorPlacement.params.width,
           height: doorPlacement.params.height,
           swingDirection: doorPlacement.params.swingDirection,
+          swingSide: doorPlacement.params.swingSide,
         });
 
         const opening = createOpeningFromDoor(door);
@@ -926,6 +1143,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
       const scale = assetPlacement.params.scale;
       const rotationRad = (assetPlacement.params.rotation * Math.PI) / 180;
 
+      // Use catalog dimensions for 2D display, actual model scale for 3D
       const element = createFurniture({
         name: asset.name,
         category: furnitureCategory,
@@ -943,6 +1161,12 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         depth: asset.dimensions.depth * scale,
         height: asset.dimensions.height * scale,
         storeyId: activeStoreyId,
+        // Store target dimensions for reference (2D uses these)
+        targetDimensions: {
+          width: asset.dimensions.width * scale,
+          depth: asset.dimensions.depth * scale,
+          height: asset.dimensions.height * scale,
+        },
       });
 
       addElement(element);
@@ -1029,7 +1253,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
 
       // For select tool, only process clicks on the stage background (not elements)
       // For drawing tools, process clicks anywhere (click-through elements)
-      const isDrawingTool = ['wall', 'slab', 'space-draw', 'counter', 'column', 'stair', 'door', 'window', 'asset'].includes(activeTool);
+      const isDrawingTool = ['wall', 'slab', 'space-draw', 'space-detect', 'counter', 'column', 'stair', 'door', 'window', 'asset'].includes(activeTool);
       if (!isDrawingTool && e.target !== stageRef.current) return;
 
       const stage = stageRef.current;
@@ -1051,6 +1275,8 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         refPoint = spacePlacement.points[spacePlacement.points.length - 1];
       } else if (activeTool === 'counter' && counterPlacement.points.length > 0) {
         refPoint = counterPlacement.points[counterPlacement.points.length - 1];
+      } else if (activeTool === 'stair' && stairPlacement.startPoint) {
+        refPoint = stairPlacement.startPoint;
       }
 
       const snappedPos = applySnap(worldPos, refPoint);
@@ -1071,6 +1297,10 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
 
         case 'space-draw':
           handleSpaceClick(snappedPos);
+          break;
+
+        case 'space-detect':
+          handleSpaceDetectClick(snappedPos);
           break;
 
         case 'counter':
@@ -1101,7 +1331,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           break;
       }
     },
-    [activeTool, clearSelection, screenToWorld, applySnap, handleWallClick, handleSlabClick, handleSpaceClick, handleCounterClick,
+    [activeTool, clearSelection, screenToWorld, applySnap, handleWallClick, handleSlabClick, handleSpaceClick, handleSpaceDetectClick, handleCounterClick,
      handleColumnClick, handleStairClick, handleDoorClick, handleWindowClick, handleAssetClick,
      wallPlacement.isPlacing, wallPlacement.startPoint, slabPlacement.points, spacePlacement.points, counterPlacement.points,
      stairPlacement.startPoint]
@@ -1247,14 +1477,14 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   const renderDoor = (element: BimElement) => {
     if (!element.doorData) return null;
 
-    const { width, positionOnWall, hostWallId, swingDirection, swingSide } = element.doorData;
+    const { width, height, positionOnWall, hostWallId, swingDirection, swingSide } = element.doorData;
     const isSelected = selectedIds.has(element.id);
 
     // Get host wall to calculate door position
     const hostWall = elements.find((e) => e.id === hostWallId);
     if (!hostWall?.wallData) return null;
 
-    const { startPoint, endPoint } = hostWall.wallData;
+    const { startPoint, endPoint, thickness: wallThickness } = hostWall.wallData;
     const wallDx = endPoint.x - startPoint.x;
     const wallDy = endPoint.y - startPoint.y;
     const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
@@ -1345,6 +1575,50 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           stroke={isSelected ? WALL_COLOR_SELECTED : DOOR_COLOR}
           strokeWidth={isSelected ? 2 : 1}
         />
+        {/* Door dimensions label */}
+        {(() => {
+          const screenCenter = worldToScreen(doorX, doorY);
+          // World-space normal direction (perpendicular to wall)
+          const normX = -dirY;
+          const normY = dirX;
+          // Offset based on wall thickness (screen coords) + padding
+          const screenWallHalfThickness = (wallThickness / 2) * cad2dZoom;
+          const labelPadding = 14; // Minimum padding in pixels
+          const labelOffset = screenWallHalfThickness + labelPadding;
+          // Position label on the side opposite to door swing
+          const labelSide = swingSide === 'outward' ? -1 : 1;
+          // Apply offset in screen coords (Y is flipped, so negate normY)
+          const labelX = screenCenter.x + normX * labelOffset * labelSide;
+          const labelY = screenCenter.y - normY * labelOffset * labelSide;
+          const dimensionText = `${Math.round(width * 100)}×${Math.round(height * 100)}`;
+
+          // Calculate rotation to align with wall (screen coords have flipped Y)
+          const wallAngleRad = Math.atan2(wallDy, wallDx);
+          let rotationDeg = -wallAngleRad * (180 / Math.PI);
+          // Keep text readable (not upside down)
+          if (rotationDeg > 90 || rotationDeg < -90) {
+            rotationDeg += 180;
+          }
+
+          const textWidth = 50;
+          const textHeight = 12;
+
+          return (
+            <Text
+              x={labelX}
+              y={labelY}
+              offsetX={textWidth / 2}
+              offsetY={textHeight / 2}
+              rotation={rotationDeg}
+              width={textWidth}
+              text={dimensionText}
+              fontSize={10}
+              fill={isSelected ? WALL_COLOR_SELECTED : DOOR_COLOR}
+              align="center"
+              fontStyle="bold"
+            />
+          );
+        })()}
       </Group>
     );
   };
@@ -1353,7 +1627,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   const renderWindow = (element: BimElement) => {
     if (!element.windowData) return null;
 
-    const { width, positionOnWall, hostWallId } = element.windowData;
+    const { width, height, sillHeight, positionOnWall, hostWallId } = element.windowData;
     const isSelected = selectedIds.has(element.id);
 
     // Get host wall
@@ -1429,6 +1703,45 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           stroke={isSelected ? WALL_COLOR_SELECTED : WINDOW_COLOR}
           strokeWidth={1}
         />
+        {/* Window dimensions label */}
+        {(() => {
+          const screenCenter = worldToScreen(winX, winY);
+          // Offset based on wall thickness (screen coords) + padding
+          const screenWallHalfThickness = (thickness / 2) * cad2dZoom;
+          const labelPadding = 14; // Minimum padding in pixels
+          const labelOffset = screenWallHalfThickness + labelPadding;
+          // Apply offset in screen coords (Y is flipped, so negate normY)
+          const labelX = screenCenter.x + normX * labelOffset;
+          const labelY = screenCenter.y - normY * labelOffset;
+          const dimensionText = `${Math.round(width * 100)}×${Math.round(height * 100)} @${Math.round(sillHeight * 100)}`;
+
+          // Calculate rotation to align with wall (screen coords have flipped Y)
+          const wallAngleRad = Math.atan2(wallDy, wallDx);
+          let rotationDeg = -wallAngleRad * (180 / Math.PI);
+          // Keep text readable (not upside down)
+          if (rotationDeg > 90 || rotationDeg < -90) {
+            rotationDeg += 180;
+          }
+
+          const textWidth = 90;
+          const textHeight = 12;
+
+          return (
+            <Text
+              x={labelX}
+              y={labelY}
+              offsetX={textWidth / 2}
+              offsetY={textHeight / 2}
+              rotation={rotationDeg}
+              width={textWidth}
+              text={dimensionText}
+              fontSize={10}
+              fill={isSelected ? WALL_COLOR_SELECTED : WINDOW_COLOR}
+              align="center"
+              fontStyle="bold"
+            />
+          );
+        })()}
       </Group>
     );
   };
@@ -1508,21 +1821,18 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   };
 
   // Render a space (room) as filled polygon with name label
+  // Uses same color scheme as SpaceMesh.tsx (3D) and SpaceProperties.tsx for consistency
   const renderSpace = (element: BimElement) => {
     if (!element.spaceData) return null;
 
-    const { boundaryPolygon, spaceType, area } = element.spaceData;
+    const { boundaryPolygon, spaceType, area, gastroCategory } = element.spaceData;
     if (!boundaryPolygon || boundaryPolygon.length < 3) return null;
 
     const isSelected = selectedIds.has(element.id);
 
-    // Get fill color based on space type
-    let fillColor = SPACE_FILL_DEFAULT;
-    if (spaceType === 'INTERNAL') {
-      fillColor = SPACE_FILL_INTERNAL;
-    } else if (spaceType === 'EXTERNAL') {
-      fillColor = SPACE_FILL_EXTERNAL;
-    }
+    // Get fill color based on gastro category (priority) or space type (fallback)
+    // This matches the logic in SpaceMesh.tsx for 2D/3D consistency
+    const fillColor = getSpaceFillColor(gastroCategory, spaceType);
 
     // Convert polygon to screen coordinates
     const screenPoints = boundaryPolygon.flatMap((p) => {
@@ -1544,6 +1854,15 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     // Format area text
     const areaText = area ? `${area.toFixed(1)} m²` : '';
 
+    // Get gastro category label (if set and not SONSTIGES)
+    const categoryLabel = gastroCategory && gastroCategory !== 'SONSTIGES'
+      ? GASTRO_SPACE_LABELS[gastroCategory]
+      : null;
+
+    // Calculate label box height based on content
+    const labelHeight = categoryLabel ? 48 : 36;
+    const labelOffsetY = categoryLabel ? -24 : -18;
+
     return (
       <Group key={element.id} onClick={(e) => handleElementClick(element.id, e)}>
         {/* Space fill polygon */}
@@ -1558,9 +1877,9 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         {/* Space name label */}
         <Rect
           x={labelPos.x - 50}
-          y={labelPos.y - 18}
+          y={labelPos.y + labelOffsetY}
           width={100}
-          height={36}
+          height={labelHeight}
           fill="rgba(255, 255, 255, 0.9)"
           cornerRadius={4}
           stroke={isSelected ? SPACE_COLOR_SELECTED : '#999'}
@@ -1568,7 +1887,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         />
         <Text
           x={labelPos.x}
-          y={labelPos.y - 8}
+          y={labelPos.y + labelOffsetY + 6}
           text={element.name}
           fontSize={12}
           fontStyle="bold"
@@ -1578,13 +1897,26 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           offsetX={50}
           width={100}
         />
+        {categoryLabel && (
+          <Text
+            x={labelPos.x}
+            y={labelPos.y + labelOffsetY + 20}
+            text={categoryLabel}
+            fontSize={9}
+            fill="#666"
+            align="center"
+            verticalAlign="middle"
+            offsetX={50}
+            width={100}
+          />
+        )}
         {areaText && (
           <Text
             x={labelPos.x}
-            y={labelPos.y + 6}
+            y={labelPos.y + labelOffsetY + (categoryLabel ? 32 : 20)}
             text={areaText}
             fontSize={10}
-            fill="#666"
+            fill="#555"
             align="center"
             verticalAlign="middle"
             offsetX={50}
@@ -2562,20 +2894,15 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     const { startPoint, previewEndPoint, rotation, params } = stairPlacement;
     const screenStart = worldToScreen(startPoint.x, startPoint.y);
 
-    // Calculate stair run length based on storey height
-    const sortedStoreys = [...storeys].sort((a, b) => a.elevation - b.elevation);
-    const activeIndex = sortedStoreys.findIndex((s) => s.id === activeStoreyId);
-    let targetStorey = params.targetStoreyId
+    // Calculate stair run length based on storey height or manual input
+    const targetStorey = params.targetStoreyId
       ? storeys.find((s) => s.id === params.targetStoreyId)
       : null;
 
-    if (!targetStorey && activeIndex >= 0 && activeIndex < sortedStoreys.length - 1) {
-      targetStorey = sortedStoreys[activeIndex + 1];
-    }
-
+    // Use storey difference if available, otherwise use manual totalRise from params
     const totalRise = targetStorey && activeStorey
       ? Math.abs(targetStorey.elevation - activeStorey.elevation)
-      : 3.0;
+      : params.totalRise;
 
     const steps = calculateSteps(totalRise);
     const runLength = steps.runLength;
@@ -2610,7 +2937,8 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     }
 
     // Show rotated stair preview
-    const rotationDeg = rotation * (180 / Math.PI);
+    // Negate rotation for screen coordinates (Y-axis is flipped)
+    const rotationDeg = -rotation * (180 / Math.PI);
 
     return (
       <Group x={screenStart.x} y={screenStart.y} rotation={rotationDeg}>
@@ -2709,6 +3037,222 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     );
   };
 
+  // Render door preview on wall (matches final door rendering logic)
+  const renderDoorPreview = () => {
+    if (activeTool !== 'door') return null;
+    if (!doorPlacement.hostWallId || doorPlacement.previewPosition === null) return null;
+
+    const wall = wallsForPreview.find((w) => w.id === doorPlacement.hostWallId);
+    if (!wall || !wall.wallData) return null;
+
+    const { startPoint, endPoint, thickness } = wall.wallData;
+    const position = doorPlacement.previewPosition;
+    const doorWidth = doorPlacement.params.width;
+    const doorHeight = doorPlacement.params.height;
+    const swingDirection = doorPlacement.params.swingDirection;
+    const swingSide = doorPlacement.params.swingSide;
+
+    const wallDx = endPoint.x - startPoint.x;
+    const wallDy = endPoint.y - startPoint.y;
+    const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
+    if (wallLength === 0) return null;
+
+    // Door position along wall
+    const doorX = startPoint.x + wallDx * position;
+    const doorY = startPoint.y + wallDy * position;
+
+    // Direction along wall (normalized)
+    const dirX = wallDx / wallLength;
+    const dirY = wallDy / wallLength;
+
+    // Door endpoints
+    const halfWidth = doorWidth / 2;
+    const doorStart = {
+      x: doorX - dirX * halfWidth,
+      y: doorY - dirY * halfWidth,
+    };
+    const doorEnd = {
+      x: doorX + dirX * halfWidth,
+      y: doorY + dirY * halfWidth,
+    };
+
+    const screenStart = worldToScreen(doorStart.x, doorStart.y);
+    const screenEnd = worldToScreen(doorEnd.x, doorEnd.y);
+    const screenCenter = worldToScreen(doorX, doorY);
+
+    // Hinge position depends on swing direction (same as renderDoor)
+    // 'right' = hinge at right end of opening (doorEnd -> screenStart in screen coords)
+    // 'left' = hinge at left end of opening (doorStart -> screenEnd in screen coords)
+    const hingeScreen = swingDirection === 'right' ? screenStart : screenEnd;
+    const arcRadius = doorWidth * cad2dZoom;
+
+    // Calculate wall angle in screen coordinates (Y is inverted)
+    const screenWallAngleDeg = -Math.atan2(wallDy, wallDx) * (180 / Math.PI);
+
+    // Open position is always perpendicular to wall (same as renderDoor)
+    const openAngle = swingSide === 'outward'
+      ? screenWallAngleDeg + 90
+      : screenWallAngleDeg - 90;
+
+    // Closed position depends on hinge side
+    const closedAngle = swingDirection === 'right'
+      ? screenWallAngleDeg
+      : screenWallAngleDeg + 180;
+
+    // Calculate sweep from closed to open
+    let sweepAngle = openAngle - closedAngle;
+    while (sweepAngle > 180) sweepAngle -= 360;
+    while (sweepAngle < -180) sweepAngle += 360;
+
+    const arcRotation = sweepAngle >= 0 ? closedAngle : openAngle;
+    const arcSweep = Math.abs(sweepAngle);
+
+    // Door leaf endpoint (open position)
+    const leafEndX = hingeScreen.x + Math.cos(openAngle * Math.PI / 180) * arcRadius;
+    const leafEndY = hingeScreen.y + Math.sin(openAngle * Math.PI / 180) * arcRadius;
+
+    const isValid = doorPlacement.isValidPosition;
+    const strokeColor = isValid ? DOOR_COLOR : '#ff0000';
+    const fillColor = isValid ? 'rgba(0, 102, 204, 0.15)' : 'rgba(255, 0, 0, 0.15)';
+
+    return (
+      <Group>
+        {/* Door opening (line in wall) - dashed for preview */}
+        <Line
+          points={[screenStart.x, screenStart.y, screenEnd.x, screenEnd.y]}
+          stroke={strokeColor}
+          strokeWidth={2}
+          dash={[4, 4]}
+        />
+        {/* Door swing arc */}
+        <Arc
+          x={hingeScreen.x}
+          y={hingeScreen.y}
+          innerRadius={0}
+          outerRadius={arcRadius}
+          angle={arcSweep}
+          rotation={arcRotation}
+          fill={fillColor}
+          stroke={strokeColor}
+          strokeWidth={1}
+          dash={[2, 2]}
+        />
+        {/* Door leaf line (shows open position) */}
+        <Line
+          points={[hingeScreen.x, hingeScreen.y, leafEndX, leafEndY]}
+          stroke={strokeColor}
+          strokeWidth={1}
+          dash={[2, 2]}
+        />
+        {/* Door dimensions label */}
+        {(() => {
+          const screenNormX = -dirY;
+          const screenNormY = dirX;
+          const screenWallHalfThickness = (thickness / 2) * cad2dZoom;
+          const labelPadding = 12;
+          const labelOffset = screenWallHalfThickness + labelPadding;
+          const labelSide = swingSide === 'outward' ? -1 : 1;
+          const labelX = screenCenter.x + screenNormX * labelOffset * labelSide;
+          const labelY = screenCenter.y + screenNormY * labelOffset * labelSide;
+          const dimensionText = `${Math.round(doorWidth * 100)}×${Math.round(doorHeight * 100)}`;
+
+          const wallAngleRad = Math.atan2(wallDy, wallDx);
+          let rotationDeg = -wallAngleRad * (180 / Math.PI);
+          if (rotationDeg > 90 || rotationDeg < -90) {
+            rotationDeg += 180;
+          }
+
+          return (
+            <Text
+              x={labelX}
+              y={labelY}
+              offsetX={25}
+              offsetY={6}
+              rotation={rotationDeg}
+              width={50}
+              text={dimensionText}
+              fontSize={10}
+              fill={strokeColor}
+              align="center"
+              fontStyle="bold"
+            />
+          );
+        })()}
+      </Group>
+    );
+  };
+
+  // Render window preview on wall
+  const renderWindowPreview = () => {
+    if (activeTool !== 'window') return null;
+    if (!windowPlacement.hostWallId || windowPlacement.previewPosition === null) return null;
+
+    const wall = wallsForPreview.find((w) => w.id === windowPlacement.hostWallId);
+    if (!wall || !wall.wallData) return null;
+
+    const { startPoint, endPoint, thickness } = wall.wallData;
+    const position = windowPlacement.previewPosition;
+    const windowWidth = windowPlacement.params.width;
+    const windowHeight = windowPlacement.params.height;
+    const sillHeight = windowPlacement.params.sillHeight;
+
+    // Calculate window center position on wall
+    const centerX = startPoint.x + (endPoint.x - startPoint.x) * position;
+    const centerY = startPoint.y + (endPoint.y - startPoint.y) * position;
+    const screenCenter = worldToScreen(centerX, centerY);
+
+    // Calculate wall angle for rotation
+    const wallAngle = Math.atan2(endPoint.y - startPoint.y, endPoint.x - startPoint.x);
+    const rotationDeg = -wallAngle * (180 / Math.PI); // Negative because screen Y is flipped
+
+    // Screen dimensions
+    const screenWindowWidth = windowWidth * cad2dZoom;
+    const screenThickness = thickness * cad2dZoom;
+
+    const isValid = windowPlacement.isValidPosition;
+    const fillColor = isValid ? 'rgba(0, 204, 204, 0.4)' : 'rgba(255, 0, 0, 0.3)';
+    const strokeColor = isValid ? WINDOW_COLOR : '#ff0000';
+
+    return (
+      <Group x={screenCenter.x} y={screenCenter.y} rotation={rotationDeg}>
+        {/* Window opening rectangle */}
+        <Rect
+          x={-screenWindowWidth / 2}
+          y={-screenThickness / 2}
+          width={screenWindowWidth}
+          height={screenThickness}
+          fill={fillColor}
+          stroke={strokeColor}
+          strokeWidth={2}
+          dash={[4, 4]}
+        />
+        {/* Window cross lines (glass pattern) */}
+        <Line
+          points={[0, -screenThickness / 2, 0, screenThickness / 2]}
+          stroke={strokeColor}
+          strokeWidth={1}
+          dash={[2, 2]}
+        />
+        <Line
+          points={[-screenWindowWidth / 2, 0, screenWindowWidth / 2, 0]}
+          stroke={strokeColor}
+          strokeWidth={1}
+          dash={[2, 2]}
+        />
+        {/* Size and sill height indicator */}
+        <Text
+          x={-screenWindowWidth / 2}
+          y={screenThickness / 2 + 5}
+          width={screenWindowWidth}
+          text={`${(windowWidth * 100).toFixed(0)}×${(windowHeight * 100).toFixed(0)}cm @${(sillHeight * 100).toFixed(0)}cm`}
+          fontSize={9}
+          fill={strokeColor}
+          align="center"
+        />
+      </Group>
+    );
+  };
+
   // Render cursor crosshair for drawing tools
   const renderCursor = () => {
     if (activeTool === 'select' || activeTool === 'pan' || activeTool === 'orbit') return null;
@@ -2790,6 +3334,8 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           {renderColumnPreview()}
           {renderStairPreview()}
           {renderAssetPreview()}
+          {renderDoorPreview()}
+          {renderWindowPreview()}
           {renderCursor()}
         </Layer>
 

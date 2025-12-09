@@ -1,16 +1,17 @@
 import { useCallback } from 'react';
 import { useToolStore } from '@/store';
-import { getDefaultDoorWidth, getDoorTypeLabel } from '@/bim/elements/Door';
-import type { DoorType } from '@/types/bim';
+import { getDefaultDoorWidth, getDoorTypeLabel, getSwingSideLabel } from '@/bim/elements/Door';
+import type { DoorType, DoorSwingSide } from '@/types/bim';
 
 const DOOR_TYPES: DoorType[] = ['single', 'double', 'sliding'];
+const SWING_SIDES: DoorSwingSide[] = ['inward', 'outward'];
 
 /**
  * Panel for configuring door parameters before placement
  * Shows when door tool is active
  */
 export function DoorParameterPanel() {
-  const { activeTool, doorPlacement, setDoorType, setDoorWidth, setDoorHeight, setDoorSwingDirection } =
+  const { activeTool, doorPlacement, setDoorType, setDoorWidth, setDoorHeight, setDoorSwingDirection, setDoorSwingSide } =
     useToolStore();
 
   const { params, distanceFromLeft, distanceFromRight, isValidPosition } = doorPlacement;
@@ -129,6 +130,28 @@ export function DoorParameterPanel() {
             >
               Rechts
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Swing Side (inward/outward) - not for sliding doors */}
+      {params.doorType !== 'sliding' && (
+        <div className="mb-3">
+          <label className="text-xs text-muted-foreground mb-1.5 block">Aufschlag</label>
+          <div className="grid grid-cols-2 gap-1">
+            {SWING_SIDES.map((side) => (
+              <button
+                key={side}
+                onClick={() => setDoorSwingSide(side)}
+                className={`px-2 py-1.5 text-xs rounded border transition-colors ${
+                  params.swingSide === side
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-muted border-border hover:bg-accent'
+                }`}
+              >
+                {getSwingSideLabel(side)}
+              </button>
+            ))}
           </div>
         </div>
       )}

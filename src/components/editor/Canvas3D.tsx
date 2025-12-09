@@ -20,6 +20,7 @@ import { PdfUnderlay } from './PdfUnderlay';
 import { CameraController } from './CameraController';
 import { MouseOrbitController } from './MouseOrbitController';
 import { SelectionTransformGizmo } from './TransformGizmo';
+import { ZoomToExtents3D } from './ZoomToExtents';
 import { useViewStore, useToolStore, useSelectionStore, useProjectStore } from '@/store';
 
 // 2D Camera Setup Component - positions orthographic camera for top-down view
@@ -188,6 +189,9 @@ export function Canvas3D() {
 
         {/* Camera Controller for focus/zoom (3D only) */}
         {!is2D && <CameraController />}
+
+        {/* Zoom to extents (3D only) */}
+        {!is2D && <ZoomToExtents3D />}
 
         {/* Mouse-based orbit pivot (3D only) */}
         {!is2D && <MouseOrbitController />}

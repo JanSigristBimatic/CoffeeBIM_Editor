@@ -33,7 +33,9 @@ export function useDragElement(element: BimElement) {
   const elementStartDataRef = useRef<BimElement | null>(null);
 
   const selected = isSelected(element.id);
-  const canDrag = activeTool === 'select' && selected;
+  // Walls and slabs should not be draggable - they need precise placement
+  const isDraggableType = element.type !== 'wall' && element.type !== 'slab';
+  const canDrag = activeTool === 'select' && selected && isDraggableType;
 
   // Ground plane for raycasting (Z = 0, Z-up coordinate system)
   const groundPlane = useRef(new Plane(new Vector3(0, 0, 1), 0)).current;
@@ -69,6 +71,11 @@ export function useDragElement(element: BimElement) {
       // If not selected, just select it
       if (!selected) {
         select(element.id);
+        return;
+      }
+
+      // Don't allow dragging for walls and slabs
+      if (!isDraggableType) {
         return;
       }
 

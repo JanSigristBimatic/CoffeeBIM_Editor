@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useEffect } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ArrowUp, ArrowDown } from 'lucide-react';
 import { useToolStore, useProjectStore } from '@/store';
 import { getStairTypeLabel } from '@/bim/elements/Stair';
@@ -12,7 +12,7 @@ const STAIR_TYPES: StairType[] = ['straight', 'l-shape', 'u-shape'];
  * Supports stairs going both UP and DOWN
  */
 export function StairParameterPanel() {
-  const { activeTool, stairPlacement, setStairType, setStairWidth, setStairTargetStorey } =
+  const { activeTool, stairPlacement, setStairType, setStairWidth, setStairTotalRise, setStairTargetStorey } =
     useToolStore();
   const { storeys, activeStoreyId } = useProjectStore();
 
@@ -40,19 +40,12 @@ export function StairParameterPanel() {
     };
   }, [storeys, currentStorey]);
 
-  // Auto-select first storey above if no target selected (or first below if no above)
-  const effectiveTargetStoreyId = params.targetStoreyId ?? storeysAbove[0]?.id ?? storeysBelow[0]?.id ?? null;
+  // Use only user-selected target storey (no auto-selection for manual height support)
+  const effectiveTargetStoreyId = params.targetStoreyId;
 
   // Determine direction based on selected target
-  const targetStorey = storeys.find((s) => s.id === effectiveTargetStoreyId);
+  const targetStorey = effectiveTargetStoreyId ? storeys.find((s) => s.id === effectiveTargetStoreyId) : null;
   const isGoingUp = currentStorey && targetStorey ? targetStorey.elevation > currentStorey.elevation : true;
-
-  // Auto-select first available storey when tool is activated
-  useEffect(() => {
-    if (activeTool === 'stair' && !params.targetStoreyId && allTargetStoreys.length > 0) {
-      setStairTargetStorey(storeysAbove[0]?.id ?? storeysBelow[0]?.id ?? null);
-    }
-  }, [activeTool, params.targetStoreyId, allTargetStoreys, storeysAbove, storeysBelow, setStairTargetStorey]);
 
   // Handle stair type change
   const handleStairTypeChange = useCallback(
@@ -82,16 +75,27 @@ export function StairParameterPanel() {
     [setStairTargetStorey]
   );
 
+  // Handle manual height change
+  const handleTotalRiseChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = parseFloat(e.target.value);
+      if (!isNaN(value) && value >= 0.5 && value <= 10.0) {
+        setStairTotalRise(value);
+      }
+    },
+    [setStairTotalRise]
+  );
+
   // Don't show if not in stair mode
   if (activeTool !== 'stair') {
     return null;
   }
 
-  // Calculate preview info if we have a target storey
+  // Calculate preview info - use storey difference if available, otherwise manual height
   // totalRise is always positive (absolute height difference)
   const totalRise = currentStorey && targetStorey
     ? Math.abs(targetStorey.elevation - currentStorey.elevation)
-    : null;
+    : params.totalRise;
 
   return (
     <div className="absolute left-4 top-20 bg-background border border-border rounded-lg shadow-lg p-4 w-64 z-10">
@@ -136,43 +140,55 @@ export function StairParameterPanel() {
         <p className="text-xs text-muted-foreground mt-1">Lichte Breite: 0.8 - 2.0m (DIN 18065)</p>
       </div>
 
-      {/* Target Storey Selection */}
+      {/* Height / Total Rise Input */}
       <div className="mb-3">
-        <label className="text-xs text-muted-foreground mb-1.5 block">Zielgeschoss</label>
-        {allTargetStoreys.length === 0 ? (
-          <p className="text-xs text-amber-500">
-            Kein anderes Geschoss verfugbar. Erstellen Sie zuerst ein weiteres Geschoss.
-          </p>
-        ) : (
-          <>
-            <select
-              value={effectiveTargetStoreyId ?? ''}
-              onChange={handleTargetStoreyChange}
-              className="w-full px-2 py-1.5 text-sm border border-input rounded bg-background"
-            >
-              {/* Storeys above */}
-              {storeysAbove.length > 0 && (
-                <optgroup label="Nach oben">
-                  {storeysAbove.map((storey) => (
-                    <option key={storey.id} value={storey.id}>
-                      ↑ {storey.name} (+{(storey.elevation - (currentStorey?.elevation ?? 0)).toFixed(2)}m)
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {/* Storeys below */}
-              {storeysBelow.length > 0 && (
-                <optgroup label="Nach unten">
-                  {storeysBelow.map((storey) => (
-                    <option key={storey.id} value={storey.id}>
-                      ↓ {storey.name} ({(storey.elevation - (currentStorey?.elevation ?? 0)).toFixed(2)}m)
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
+        <label className="text-xs text-muted-foreground mb-1.5 block">Höhe (m)</label>
+        <input
+          type="number"
+          value={params.totalRise}
+          onChange={handleTotalRiseChange}
+          step={0.1}
+          min={0.5}
+          max={10.0}
+          className="w-full px-2 py-1.5 text-sm border border-input rounded bg-background"
+        />
+        <p className="text-xs text-muted-foreground mt-1">Gesamthöhe der Treppe: 0.5 - 10.0m</p>
+      </div>
 
-            {/* Direction indicator */}
+      {/* Target Storey Selection (optional) */}
+      {allTargetStoreys.length > 0 && (
+        <div className="mb-3">
+          <label className="text-xs text-muted-foreground mb-1.5 block">Zielgeschoss (optional)</label>
+          <select
+            value={effectiveTargetStoreyId ?? ''}
+            onChange={handleTargetStoreyChange}
+            className="w-full px-2 py-1.5 text-sm border border-input rounded bg-background"
+          >
+            <option value="">-- Manuell (Höhe oben) --</option>
+            {/* Storeys above */}
+            {storeysAbove.length > 0 && (
+              <optgroup label="Nach oben">
+                {storeysAbove.map((storey) => (
+                  <option key={storey.id} value={storey.id}>
+                    ↑ {storey.name} (+{(storey.elevation - (currentStorey?.elevation ?? 0)).toFixed(2)}m)
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {/* Storeys below */}
+            {storeysBelow.length > 0 && (
+              <optgroup label="Nach unten">
+                {storeysBelow.map((storey) => (
+                  <option key={storey.id} value={storey.id}>
+                    ↓ {storey.name} ({(storey.elevation - (currentStorey?.elevation ?? 0)).toFixed(2)}m)
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+
+          {/* Direction indicator */}
+          {targetStorey && (
             <div
               className={`mt-2 flex items-center gap-2 text-xs px-2 py-1.5 rounded ${
                 isGoingUp ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
@@ -183,9 +199,9 @@ export function StairParameterPanel() {
                 Treppe fuhrt {isGoingUp ? 'nach oben' : 'nach unten'}
               </span>
             </div>
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Preview Info */}
       {totalRise !== null && totalRise > 0 && (

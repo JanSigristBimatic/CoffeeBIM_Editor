@@ -43,6 +43,12 @@ export interface CreateFurnitureParams {
   depth?: number;
   height?: number;
   storeyId: string;
+  /** Target dimensions from asset catalog - enables auto-scaling of 3D model */
+  targetDimensions?: {
+    width: number;
+    depth: number;
+    height: number;
+  };
 }
 
 /**
@@ -62,6 +68,7 @@ export function createFurniture(params: CreateFurnitureParams): BimElement {
     depth = DEFAULT_FURNITURE_DEPTH,
     height = DEFAULT_FURNITURE_HEIGHT,
     storeyId,
+    targetDimensions,
   } = params;
 
   const id = uuid();
@@ -85,6 +92,7 @@ export function createFurniture(params: CreateFurnitureParams): BimElement {
     depth,
     height,
     scale,
+    targetDimensions,
   };
 
   // Create asset property sets with category from furniture

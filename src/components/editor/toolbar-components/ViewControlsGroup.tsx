@@ -1,9 +1,9 @@
-import { Grid2X2, RulerIcon, Columns, Box, Layout, Maximize2 } from 'lucide-react';
+import { Grid2X2, RulerIcon, Columns, Box, Layout, Maximize2, Focus } from 'lucide-react';
 import { useViewStore } from '@/store';
-import { ToggleButton } from './ToolbarButtons';
+import { ToggleButton, ActionButton } from './ToolbarButtons';
 
 export function ViewControlsGroup() {
-  const { toggleGrid, showGrid, snapSettings, toggleSnapOrthogonal, viewMode, cycleViewMode, showDimensions, toggleDimensions } = useViewStore();
+  const { toggleGrid, showGrid, snapSettings, toggleSnapOrthogonal, viewMode, cycleViewMode, showDimensions, toggleDimensions, triggerZoomToExtents } = useViewStore();
 
   // Icon and label based on view mode
   const getViewIcon = () => {
@@ -58,6 +58,12 @@ export function ViewControlsGroup() {
         isActive={showDimensions}
         onClick={toggleDimensions}
         title="Bemaßungen ein/aus (D)"
+      />
+      <ActionButton
+        icon={<Focus size={20} />}
+        label="Zoom"
+        onClick={triggerZoomToExtents}
+        shortcut="Shift+Z"
       />
     </div>
   );

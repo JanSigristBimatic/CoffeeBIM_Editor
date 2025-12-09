@@ -1,5 +1,5 @@
 import type { Point2D, Vector2D } from './geometry';
-import type { DoorType, WindowType, CounterType, StairType, WallAlignmentSide } from './bim';
+import type { DoorType, DoorSwingSide, WindowType, CounterType, StairType, WallAlignmentSide } from './bim';
 
 /**
  * Available tool types in the editor
@@ -66,6 +66,8 @@ export interface DoorPlacementParams {
   width: number;
   height: number;
   swingDirection: 'left' | 'right';
+  /** Whether door swings inward or outward (default: inward) */
+  swingSide: DoorSwingSide;
 }
 
 /**
@@ -256,8 +258,10 @@ export interface StairPlacementParams {
   stairType: StairType;
   /** Stair width in meters */
   width: number;
-  /** Target storey ID (where stair leads to) */
+  /** Target storey ID (where stair leads to) - optional, can use manual height instead */
   targetStoreyId: string | null;
+  /** Manual total rise in meters (used when no target storey selected) */
+  totalRise: number;
   /** Whether to auto-create floor opening */
   createOpening: boolean;
 }

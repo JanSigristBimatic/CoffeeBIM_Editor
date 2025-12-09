@@ -25,6 +25,8 @@ interface ViewState {
   cad2dZoom: number;
   cad2dPanX: number;
   cad2dPanY: number;
+  // Zoom to extents trigger
+  zoomToExtentsTrigger: number;
   // Dimensions
   showDimensions: boolean;
   dimensionSettings: DimensionSettings;
@@ -64,6 +66,9 @@ interface ViewActions {
   setCad2dZoom: (zoom: number) => void;
   setCad2dPan: (x: number, y: number) => void;
   zoomToExtents2d: () => void;
+  // Zoom to extents trigger (for both 2D and 3D)
+  zoomToExtentsTrigger: number; // Incremented to trigger zoom
+  triggerZoomToExtents: () => void;
   // Dimensions
   setShowDimensions: (show: boolean) => void;
   toggleDimensions: () => void;
@@ -84,7 +89,7 @@ export const useViewStore = create<ViewState & ViewActions>((set) => ({
   viewMode: 'split', // Default: vertical split with 2D left, 3D right
   showGrid: true,
   showAxes: true,
-  gridSize: 1, // 1 meter
+  gridSize: 0.1, // 10cm
   snapToGrid: true,
   snapSize: 0.1, // 10 cm
   snapSettings: defaultSnapSettings,
@@ -99,6 +104,8 @@ export const useViewStore = create<ViewState & ViewActions>((set) => ({
   cad2dZoom: 50, // pixels per meter
   cad2dPanX: 0,
   cad2dPanY: 0,
+  // Zoom to extents trigger
+  zoomToExtentsTrigger: 0,
   // Dimensions defaults
   showDimensions: true, // Show dimensions by default
   dimensionSettings: DEFAULT_DIMENSION_SETTINGS,
@@ -204,6 +211,9 @@ export const useViewStore = create<ViewState & ViewActions>((set) => ({
     // It needs access to element bounds, so we just reset to defaults here
     set({ cad2dZoom: 50, cad2dPanX: 0, cad2dPanY: 0 });
   },
+
+  triggerZoomToExtents: () =>
+    set((state) => ({ zoomToExtentsTrigger: state.zoomToExtentsTrigger + 1 })),
 
   // Dimensions
   setShowDimensions: (show) => set({ showDimensions: show }),
