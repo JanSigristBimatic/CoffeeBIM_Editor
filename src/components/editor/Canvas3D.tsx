@@ -21,6 +21,7 @@ import { CameraController } from './CameraController';
 import { MouseOrbitController } from './MouseOrbitController';
 import { SelectionTransformGizmo } from './TransformGizmo';
 import { ZoomToExtents3D } from './ZoomToExtents';
+import { BoxSelection3D } from './BoxSelection3D';
 import { useViewStore, useToolStore, useSelectionStore, useProjectStore } from '@/store';
 
 // 2D Camera Setup Component - positions orthographic camera for top-down view
@@ -202,6 +203,9 @@ export function Canvas3D() {
             <GizmoViewport axisColors={['#ff4444', '#44ff44', '#4444ff']} labelColor="white" />
           </GizmoHelper>
         )}
+
+        {/* Box Selection handler (3D only) */}
+        {!is2D && <BoxSelection3D />}
       </Suspense>
     </Canvas>
   );
