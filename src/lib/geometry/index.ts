@@ -53,17 +53,17 @@ export {
 
 export type { WallConnectionInfo, MiterData } from './wallConnections';
 
-// Wall corner geometry (new comprehensive module)
+// Wall corner geometry (new comprehensive module with true miter algorithm)
 export {
   analyzeWallCorners,
   calculateCornerExtensions,
+  calculateWallCornerVertices,
   getEdgeOffsets,
   calculateTurnDirection,
   calculateCornerAngle,
 } from './wallCorners';
 
 export type {
-  WallEdge,
   TurnDirection,
   CornerConfig,
   WallEndExtensions,

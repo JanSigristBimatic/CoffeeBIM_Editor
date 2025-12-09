@@ -2,6 +2,11 @@ import { useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import { Plane, Raycaster, Vector2, Vector3 } from 'three';
 import { useSelectionStore, useElementStore, useToolStore } from '@/store';
+
+// Note: Selection behavior:
+// - Click: Replace selection with clicked element
+// - Shift+Click: Toggle element in selection (add/remove)
+// - Ctrl+Click: Remove element from selection
 import type { BimElement } from '@/types/bim';
 import type { ThreeEvent } from '@react-three/fiber';
 
@@ -21,10 +26,11 @@ export function SelectionTransformGizmo({ onDragStart, onDragEnd }: SelectionTra
 /**
  * Hook to enable drag-and-drop movement for BIM elements.
  * Use this hook in mesh components to allow dragging selected elements.
+ * Supports multi-selection with Shift+Click.
  */
 export function useDragElement(element: BimElement) {
   const { updateElement } = useElementStore();
-  const { isSelected, select } = useSelectionStore();
+  const { isSelected, select, toggleSelection, removeFromSelection } = useSelectionStore();
   const { activeTool } = useToolStore();
   const { camera, gl, controls } = useThree();
 
@@ -68,7 +74,22 @@ export function useDragElement(element: BimElement) {
     if (activeTool === 'select') {
       event.stopPropagation();
 
-      // If not selected, just select it
+      const isShiftHeld = event.nativeEvent.shiftKey;
+      const isCtrlHeld = event.nativeEvent.ctrlKey || event.nativeEvent.metaKey;
+
+      // Ctrl+Click: Remove from selection
+      if (isCtrlHeld && !isShiftHeld) {
+        removeFromSelection([element.id]);
+        return;
+      }
+
+      // Shift+Click: Toggle in selection
+      if (isShiftHeld) {
+        toggleSelection(element.id);
+        return;
+      }
+
+      // Normal click on unselected: Replace selection
       if (!selected) {
         select(element.id);
         return;

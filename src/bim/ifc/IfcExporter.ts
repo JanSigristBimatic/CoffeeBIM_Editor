@@ -1243,24 +1243,64 @@ export class IfcExporter {
       Representations: [{ type: 5, value: shapeRepId }],
     });
 
-    // Create furniture as IfcFurnishingElement
+    // Determine IFC entity type based on IfcElectricApplianceType property
+    const grunddatenPset = furniture.properties?.find((p) => p.name === 'Pset_Grunddaten');
+    const ifcApplianceType = grunddatenPset?.properties?.IfcElectricApplianceType as string | undefined;
+    const coffeeEquipmentType = grunddatenPset?.properties?.CoffeeEquipmentType as string | undefined;
+
+    // Valid electric appliance types that should use IfcElectricAppliance
+    const validApplianceTypes = [
+      'COMPUTER', 'DIRECTWATERHEATER', 'DISHWASHER', 'ELECTRICCOOKER', 'ELECTRICHEATER',
+      'FACSIMILE', 'FREESTANDINGFAN', 'FREEZER', 'FRIDGE_FREEZER', 'HANDDRYER',
+      'INDIRECTWATERHEATER', 'MICROWAVE', 'PHOTOCOPIER', 'PRINTER', 'RADIANTHEATER',
+      'REFRIGERATOR', 'SCANNER', 'TELEPHONE', 'TUMBLEDRYER', 'TV', 'VENDINGMACHINE',
+      'WASHINGMACHINE', 'WATERCOOLER', 'WATERHEATER', 'USERDEFINED',
+    ];
+
+    const isElectricAppliance = ifcApplianceType && validApplianceTypes.includes(ifcApplianceType);
+
     const furnitureIfcId = this.getNextId();
-    this.ifcApi.WriteLine(this.modelId, {
-      expressID: furnitureIfcId,
-      type: WebIFC.IFCFURNISHINGELEMENT,
-      GlobalId: { type: 1, value: this.generateGuid() },
-      OwnerHistory: null,
-      Name: { type: 1, value: furniture.name },
-      Description: furniture.furnitureData.category
-        ? { type: 1, value: furniture.furnitureData.category }
-        : null,
-      ObjectType: furniture.furnitureData.category
-        ? { type: 1, value: furniture.furnitureData.category }
-        : null,
-      ObjectPlacement: { type: 5, value: placementId },
-      Representation: { type: 5, value: productRepId },
-      Tag: null,
-    });
+
+    if (isElectricAppliance) {
+      // Export as IfcElectricAppliance with PredefinedType
+      const objectType = ifcApplianceType === 'USERDEFINED' && coffeeEquipmentType
+        ? coffeeEquipmentType
+        : furniture.furnitureData.category || null;
+
+      this.ifcApi.WriteLine(this.modelId, {
+        expressID: furnitureIfcId,
+        type: WebIFC.IFCELECTRICAPPLIANCE,
+        GlobalId: { type: 1, value: this.generateGuid() },
+        OwnerHistory: null,
+        Name: { type: 1, value: furniture.name },
+        Description: furniture.furnitureData.category
+          ? { type: 1, value: furniture.furnitureData.category }
+          : null,
+        ObjectType: objectType ? { type: 1, value: objectType } : null,
+        ObjectPlacement: { type: 5, value: placementId },
+        Representation: { type: 5, value: productRepId },
+        Tag: null,
+        PredefinedType: { type: 3, value: ifcApplianceType },
+      });
+    } else {
+      // Export as IfcFurnishingElement (default for furniture without appliance type)
+      this.ifcApi.WriteLine(this.modelId, {
+        expressID: furnitureIfcId,
+        type: WebIFC.IFCFURNISHINGELEMENT,
+        GlobalId: { type: 1, value: this.generateGuid() },
+        OwnerHistory: null,
+        Name: { type: 1, value: furniture.name },
+        Description: furniture.furnitureData.category
+          ? { type: 1, value: furniture.furnitureData.category }
+          : null,
+        ObjectType: furniture.furnitureData.category
+          ? { type: 1, value: furniture.furnitureData.category }
+          : null,
+        ObjectPlacement: { type: 5, value: placementId },
+        Representation: { type: 5, value: productRepId },
+        Tag: null,
+      });
+    }
 
     this.furnitureIds.set(furniture.id, furnitureIfcId);
 
@@ -2190,10 +2230,10 @@ export class IfcExporter {
   }
 
   /**
-   * Convert a property value to a string for IFC export
-   * Returns null if the value cannot be converted
+   * Create an IFC type value with the appropriate type based on the input value
+   * Returns the IFC type wrapper created via CreateIfcType, or null if invalid
    */
-  private convertToIfcString(value: unknown): string | null {
+  private createIfcPropertyValue(value: unknown): ReturnType<typeof this.ifcApi.CreateIfcType> | null {
     if (value === null || value === undefined) return null;
 
     const valueType = typeof value;
@@ -2202,18 +2242,24 @@ export class IfcExporter {
       const str = value as string;
       // Skip empty strings
       if (str.trim() === '') return null;
-      return str;
+      return this.ifcApi.CreateIfcType(this.modelId, WebIFC.IFCLABEL, str);
     }
 
     if (valueType === 'number') {
       const num = value as number;
       // Skip NaN and Infinity
       if (!Number.isFinite(num)) return null;
-      return String(num);
+
+      // Use IFCINTEGER for whole numbers, IFCREAL for decimals
+      if (Number.isInteger(num)) {
+        return this.ifcApi.CreateIfcType(this.modelId, WebIFC.IFCINTEGER, num);
+      } else {
+        return this.ifcApi.CreateIfcType(this.modelId, WebIFC.IFCREAL, num);
+      }
     }
 
     if (valueType === 'boolean') {
-      return value ? 'true' : 'false';
+      return this.ifcApi.CreateIfcType(this.modelId, WebIFC.IFCBOOLEAN, value);
     }
 
     // Skip objects, arrays, functions, symbols, etc.
@@ -2226,7 +2272,13 @@ export class IfcExporter {
    * @param elementIfcId The IFC entity ID of the element
    */
   private createPropertySets(element: BimElement, elementIfcId: number): void {
-    if (!element.properties || element.properties.length === 0) return;
+    if (!element.properties || element.properties.length === 0) {
+      console.log(`[IFC Export] No properties for element ${element.name}`);
+      return;
+    }
+
+    console.log(`[IFC Export] Creating ${element.properties.length} property sets for ${element.name}:`,
+      element.properties.map(p => ({ name: p.name, props: Object.keys(p.properties || {}) })));
 
     for (const pset of element.properties) {
       // Skip if pset or pset.name is invalid
@@ -2245,19 +2297,35 @@ export class IfcExporter {
         const keyStr = String(key).trim();
         if (keyStr === '') continue;
 
-        // Convert value to string
-        const valueStr = this.convertToIfcString(value);
-        if (valueStr === null) continue;
+        // Create IFC type value with appropriate type (IFCLABEL, IFCREAL, IFCINTEGER, IFCBOOLEAN)
+        const ifcValue = this.createIfcPropertyValue(value);
+        if (ifcValue === null) {
+          // Log skipped properties for debugging
+          if (value !== '' && value !== null && value !== undefined) {
+            console.log(`[IFC Export] Skipping property "${keyStr}" with value:`, value);
+          }
+          continue;
+        }
+
+        const valueType = typeof value;
+        const valueTypeStr = valueType === 'number'
+          ? (Number.isInteger(value as number) ? 'IFCINTEGER' : 'IFCREAL')
+          : valueType === 'boolean' ? 'IFCBOOLEAN' : 'IFCLABEL';
+
+        console.log(`[IFC Export] Exporting property "${keyStr}" = ${JSON.stringify(value)} (${valueTypeStr})`);
 
         try {
           const propertyId = this.getNextId();
 
+          // Use CreateIfcType to properly create IFC type wrappers
+          const nameIfcLabel = this.ifcApi.CreateIfcType(this.modelId, WebIFC.IFCLABEL, keyStr);
+
           this.ifcApi.WriteLine(this.modelId, {
             expressID: propertyId,
             type: WebIFC.IFCPROPERTYSINGLEVALUE,
-            Name: { type: 1, value: keyStr },
+            Name: nameIfcLabel,
             Description: null,
-            NominalValue: { type: 1, value: valueStr },
+            NominalValue: ifcValue,
             Unit: null,
           });
           propertyIds.push(propertyId);
@@ -2266,33 +2334,51 @@ export class IfcExporter {
         }
       }
 
-      if (propertyIds.length === 0) continue;
+      if (propertyIds.length === 0) {
+        console.log(`[IFC Export] No valid properties in pset "${psetName}" - skipping`);
+        continue;
+      }
+
+      // Ensure psetName is primitive string
+      const psetNameStr = String(psetName);
+      console.log(`[IFC Export] Creating pset "${psetNameStr}" with ${propertyIds.length} properties`);
 
       try {
         // Create IfcPropertySet
         const psetId = this.getNextId();
+        const guid = String(this.generateGuid());
+
+        // Use CreateIfcType for GlobalId and Name
+        const psetGuidIfcLabel = this.ifcApi.CreateIfcType(this.modelId, WebIFC.IFCGLOBALLYUNIQUEID, guid);
+        const psetNameIfcLabel = this.ifcApi.CreateIfcType(this.modelId, WebIFC.IFCLABEL, psetNameStr);
+
         this.ifcApi.WriteLine(this.modelId, {
           expressID: psetId,
           type: WebIFC.IFCPROPERTYSET,
-          GlobalId: { type: 1, value: this.generateGuid() },
+          GlobalId: psetGuidIfcLabel,
           OwnerHistory: null,
-          Name: { type: 1, value: psetName },
+          Name: psetNameIfcLabel,
           Description: null,
           HasProperties: propertyIds.map((id) => ({ type: 5, value: id })),
         });
 
         // Create IfcRelDefinesByProperties to link property set to element
         const relDefinesId = this.getNextId();
+        const relGuid = String(this.generateGuid());
+        const relGuidIfcLabel = this.ifcApi.CreateIfcType(this.modelId, WebIFC.IFCGLOBALLYUNIQUEID, relGuid);
+
         this.ifcApi.WriteLine(this.modelId, {
           expressID: relDefinesId,
           type: WebIFC.IFCRELDEFINESBYPROPERTIES,
-          GlobalId: { type: 1, value: this.generateGuid() },
+          GlobalId: relGuidIfcLabel,
           OwnerHistory: null,
           Name: null,
           Description: null,
           RelatedObjects: [{ type: 5, value: elementIfcId }],
           RelatingPropertyDefinition: { type: 5, value: psetId },
         });
+
+        console.log(`[IFC Export] Successfully created pset "${psetNameStr}" and linked to element`);
       } catch (err) {
         console.warn(`[IFC Export] Skipping property set "${psetName}": ${err}`);
       }

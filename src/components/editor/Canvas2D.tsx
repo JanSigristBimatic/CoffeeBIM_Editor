@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { Stage, Layer, Line, Rect, Circle, Arc, Text, Group } from 'react-konva';
 import type { Stage as StageType } from 'konva/lib/Stage';
 import type { KonvaEventObject } from 'konva/lib/Node';
@@ -23,6 +23,7 @@ import {
   generateElementDimensions,
   calculateDimensionLinePoints,
   normalizeTextRotation,
+  calculateWallCornerVertices,
 } from '@/lib/geometry';
 import { offsetPath, createCounterPolygon } from '@/lib/geometry/pathOffset';
 import { DIMENSION_COLORS } from '@/types/dimensions';
@@ -93,7 +94,20 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   // Store hooks
   const { cad2dZoom, cad2dPanX, cad2dPanY, setCad2dZoom, setCad2dPan, showGrid, gridSize, showDimensions, dimensionSettings, snapSettings, zoomToExtentsTrigger } = useViewStore();
   const { getAllElements, getElementsByStorey, addElement, updateElement, getWallsForStorey } = useElementStore();
-  const { selectedIds, select, clearSelection, toggleSelection } = useSelectionStore();
+  const {
+    selectedIds,
+    select,
+    clearSelection,
+    toggleSelection,
+    addToSelection,
+    removeFromSelection,
+    selectMultiple,
+    boxSelect,
+    startBoxSelect,
+    updateBoxSelect,
+    finishBoxSelect,
+    getBoxSelectBounds,
+  } = useSelectionStore();
   const { activeStoreyId, storeys } = useProjectStore();
   const {
     activeTool,
@@ -482,9 +496,22 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         e.evt.preventDefault();
         setIsPanning(true);
         setLastPanPos({ x: e.evt.clientX, y: e.evt.clientY });
+        return;
+      }
+
+      // Left click in select mode on empty space - start box selection
+      if (e.evt.button === 0 && activeTool === 'select') {
+        const stage = stageRef.current;
+        if (!stage) return;
+
+        const pointer = stage.getPointerPosition();
+        if (!pointer) return;
+
+        const worldPos = screenToWorld(pointer.x, pointer.y);
+        startBoxSelect(worldPos);
       }
     },
-    []
+    [activeTool, screenToWorld, startBoxSelect]
   );
 
   // Get walls for current storey (used for door/window preview)
@@ -511,6 +538,19 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         const dy = e.evt.clientY - lastPanPos.y;
         setCad2dPan(cad2dPanX + dx, cad2dPanY + dy);
         setLastPanPos({ x: e.evt.clientX, y: e.evt.clientY });
+        return;
+      }
+
+      // Update box selection if active
+      if (boxSelect.isActive && activeTool === 'select') {
+        const stage = stageRef.current;
+        if (!stage) return;
+
+        const pointer = stage.getPointerPosition();
+        if (!pointer) return;
+
+        const worldPos = screenToWorld(pointer.x, pointer.y);
+        updateBoxSelect(worldPos);
         return;
       }
 
@@ -608,9 +648,162 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
      findWallAtPointForPreview, doorPlacement.params.width, windowPlacement.params.width, setDoorPreview, setWindowPreview]
   );
 
-  const handleMouseUp = useCallback(() => {
-    setIsPanning(false);
+  /**
+   * Check if an element's bounding box intersects with a selection rectangle
+   */
+  const getElementBounds = useCallback((element: BimElement): { min: Point2D; max: Point2D } | null => {
+    if (element.type === 'wall' && element.wallData) {
+      const { startPoint, endPoint, thickness } = element.wallData;
+      return {
+        min: {
+          x: Math.min(startPoint.x, endPoint.x) - thickness,
+          y: Math.min(startPoint.y, endPoint.y) - thickness,
+        },
+        max: {
+          x: Math.max(startPoint.x, endPoint.x) + thickness,
+          y: Math.max(startPoint.y, endPoint.y) + thickness,
+        },
+      };
+    }
+
+    if (element.type === 'slab' && element.slabData) {
+      const xs = element.slabData.outline.map((p) => p.x);
+      const ys = element.slabData.outline.map((p) => p.y);
+      return {
+        min: { x: Math.min(...xs), y: Math.min(...ys) },
+        max: { x: Math.max(...xs), y: Math.max(...ys) },
+      };
+    }
+
+    if (element.type === 'space' && element.spaceData) {
+      const xs = element.spaceData.boundaryPolygon.map((p) => p.x);
+      const ys = element.spaceData.boundaryPolygon.map((p) => p.y);
+      return {
+        min: { x: Math.min(...xs), y: Math.min(...ys) },
+        max: { x: Math.max(...xs), y: Math.max(...ys) },
+      };
+    }
+
+    if (element.type === 'counter' && element.counterData) {
+      const xs = element.counterData.path.map((p) => p.x);
+      const ys = element.counterData.path.map((p) => p.y);
+      const depth = element.counterData.depth;
+      return {
+        min: { x: Math.min(...xs) - depth, y: Math.min(...ys) - depth },
+        max: { x: Math.max(...xs) + depth, y: Math.max(...ys) + depth },
+      };
+    }
+
+    if (element.type === 'column' && element.columnData) {
+      const pos = element.placement.position;
+      const size = element.columnData.profileType === 'circular'
+        ? element.columnData.width // For circular columns, width = diameter
+        : Math.max(element.columnData.width, element.columnData.depth);
+      const half = size / 2;
+      return {
+        min: { x: pos.x - half, y: pos.y - half },
+        max: { x: pos.x + half, y: pos.y + half },
+      };
+    }
+
+    if (element.type === 'stair' && element.stairData) {
+      const { width, steps } = element.stairData;
+      const pos = element.placement.position;
+      // Simplified bounds - actual rotation would need more complex calculation
+      const size = Math.max(width, steps.runLength);
+      return {
+        min: { x: pos.x - size / 2, y: pos.y - size / 2 },
+        max: { x: pos.x + size / 2, y: pos.y + size / 2 },
+      };
+    }
+
+    // Default: use placement position with a small bounding box
+    const pos = element.placement.position;
+    const defaultSize = 0.5;
+    return {
+      min: { x: pos.x - defaultSize, y: pos.y - defaultSize },
+      max: { x: pos.x + defaultSize, y: pos.y + defaultSize },
+    };
   }, []);
+
+  /**
+   * Check if two axis-aligned bounding boxes intersect
+   */
+  const boundsIntersect = useCallback(
+    (a: { min: Point2D; max: Point2D }, b: { min: Point2D; max: Point2D }): boolean => {
+      return a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.y <= b.max.y && a.max.y >= b.min.y;
+    },
+    []
+  );
+
+  const handleMouseUp = useCallback(
+    (e: KonvaEventObject<MouseEvent>) => {
+      setIsPanning(false);
+
+      // Finish box selection
+      if (boxSelect.isActive && activeTool === 'select') {
+        const bounds = getBoxSelectBounds();
+
+        if (bounds) {
+          // Check if box is large enough (not just a click)
+          const boxWidth = Math.abs(bounds.max.x - bounds.min.x);
+          const boxHeight = Math.abs(bounds.max.y - bounds.min.y);
+          const minBoxSize = 0.1; // Minimum box size in world units
+
+          if (boxWidth > minBoxSize || boxHeight > minBoxSize) {
+            // Find elements that intersect with the selection box
+            const intersectingIds: string[] = [];
+            for (const element of elements) {
+              const elementBounds = getElementBounds(element);
+              if (elementBounds && boundsIntersect(bounds, elementBounds)) {
+                intersectingIds.push(element.id);
+              }
+            }
+
+            // Apply selection based on modifiers
+            const isShift = e.evt.shiftKey;
+            const isCtrl = e.evt.ctrlKey;
+
+            if (isCtrl && intersectingIds.length > 0) {
+              // Ctrl+Box: Remove from selection
+              const currentIds = Array.from(selectedIds);
+              const newIds = currentIds.filter((id) => !intersectingIds.includes(id));
+              selectMultiple(newIds);
+            } else if (isShift && intersectingIds.length > 0) {
+              // Shift+Box: Add to selection
+              addToSelection(intersectingIds);
+            } else if (intersectingIds.length > 0) {
+              // Normal box: Replace selection
+              selectMultiple(intersectingIds);
+            } else {
+              // Empty box without modifiers: Clear selection
+              clearSelection();
+            }
+          } else {
+            // Small box (click) - clear selection if no modifiers
+            if (!e.evt.shiftKey && !e.evt.ctrlKey) {
+              clearSelection();
+            }
+          }
+        }
+
+        finishBoxSelect();
+      }
+    },
+    [
+      boxSelect.isActive,
+      activeTool,
+      getBoxSelectBounds,
+      elements,
+      getElementBounds,
+      boundsIntersect,
+      selectedIds,
+      selectMultiple,
+      addToSelection,
+      clearSelection,
+      finishBoxSelect,
+    ]
+  );
 
   // Prevent context menu
   const handleContextMenu = useCallback((e: KonvaEventObject<PointerEvent>) => {
@@ -618,19 +811,28 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   }, []);
 
   // Handle element click for selection
+  // Shift+Click: Toggle element in selection
+  // Ctrl+Click: Remove element from selection
   const handleElementClick = useCallback(
     (elementId: string, e: KonvaEventObject<MouseEvent>) => {
       if (activeTool !== 'select') return;
 
       e.cancelBubble = true; // Prevent stage click
 
-      if (e.evt.shiftKey || e.evt.ctrlKey) {
+      const { shiftKey, ctrlKey } = e.evt;
+
+      if (ctrlKey && !shiftKey) {
+        // Ctrl+Click: Remove from selection
+        removeFromSelection([elementId]);
+      } else if (shiftKey) {
+        // Shift+Click: Toggle in selection
         toggleSelection(elementId);
       } else {
+        // Normal click: Replace selection
         select(elementId);
       }
     },
-    [activeTool, select, toggleSelection]
+    [activeTool, select, toggleSelection, removeFromSelection]
   );
 
   // Check if point is close to first point (for closing polygon)
@@ -1417,30 +1619,62 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     return <>{lines}</>;
   };
 
-  // Render a wall as CAD lines
+  // Get all walls for corner calculation
+  const allWallsForCorners = useMemo(() => {
+    return activeStoreyId ? getWallsForStorey(activeStoreyId) : [];
+  }, [activeStoreyId, getWallsForStorey]);
+
+  // Render a wall as CAD lines with proper mitered corners
   const renderWall = (element: BimElement) => {
     if (!element.wallData) return null;
 
-    const { startPoint, endPoint, thickness } = element.wallData;
+    const { startPoint, endPoint } = element.wallData;
     const isSelected = selectedIds.has(element.id);
 
-    // Calculate wall rectangle corners
-    const dx = endPoint.x - startPoint.x;
-    const dy = endPoint.y - startPoint.y;
-    const length = Math.sqrt(dx * dx + dy * dy);
-    if (length === 0) return null;
+    // Calculate mitered corner vertices using the new true miter algorithm
+    const cornerVertices = calculateWallCornerVertices(element, allWallsForCorners);
 
-    // Normal direction (perpendicular to wall)
-    const nx = -dy / length;
-    const ny = dx / length;
-    const halfThick = thickness / 2;
+    if (!cornerVertices) {
+      // Fallback to simple rectangle if corner calculation fails
+      const { thickness } = element.wallData;
+      const dx = endPoint.x - startPoint.x;
+      const dy = endPoint.y - startPoint.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      if (length === 0) return null;
 
-    // Four corners of the wall
+      const nx = -dy / length;
+      const ny = dx / length;
+      const halfThick = thickness / 2;
+
+      const corners = [
+        { x: startPoint.x + nx * halfThick, y: startPoint.y + ny * halfThick },
+        { x: endPoint.x + nx * halfThick, y: endPoint.y + ny * halfThick },
+        { x: endPoint.x - nx * halfThick, y: endPoint.y - ny * halfThick },
+        { x: startPoint.x - nx * halfThick, y: startPoint.y - ny * halfThick },
+      ];
+      const screenCorners = corners.map((c) => worldToScreen(c.x, c.y));
+      const points = screenCorners.flatMap((c) => [c.x, c.y]);
+
+      return (
+        <Group key={element.id} onClick={(e) => handleElementClick(element.id, e)}>
+          <Line
+            points={points}
+            closed
+            fill={isSelected ? '#cce0ff' : '#e8e8e8'}
+            stroke={isSelected ? WALL_COLOR_SELECTED : WALL_COLOR}
+            strokeWidth={isSelected ? 2 : 1}
+          />
+        </Group>
+      );
+    }
+
+    // Use mitered corner vertices for clean corner joints
+    // Order: startLeft -> endLeft -> endRight -> startRight (clockwise)
     const corners = [
-      { x: startPoint.x + nx * halfThick, y: startPoint.y + ny * halfThick },
-      { x: endPoint.x + nx * halfThick, y: endPoint.y + ny * halfThick },
-      { x: endPoint.x - nx * halfThick, y: endPoint.y - ny * halfThick },
-      { x: startPoint.x - nx * halfThick, y: startPoint.y - ny * halfThick },
+      cornerVertices.startLeft,
+      cornerVertices.endLeft,
+      cornerVertices.endRight,
+      cornerVertices.startRight,
     ];
 
     // Convert to screen coordinates
@@ -1449,7 +1683,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
 
     return (
       <Group key={element.id} onClick={(e) => handleElementClick(element.id, e)}>
-        {/* Wall fill */}
+        {/* Wall fill with mitered corners */}
         <Line
           points={points}
           closed
@@ -3304,6 +3538,34 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     );
   };
 
+  // Render box selection rectangle
+  const renderBoxSelection = () => {
+    if (!boxSelect.isActive || !boxSelect.startPoint || !boxSelect.currentPoint) {
+      return null;
+    }
+
+    const start = worldToScreen(boxSelect.startPoint.x, boxSelect.startPoint.y);
+    const end = worldToScreen(boxSelect.currentPoint.x, boxSelect.currentPoint.y);
+
+    const x = Math.min(start.x, end.x);
+    const y = Math.min(start.y, end.y);
+    const width = Math.abs(end.x - start.x);
+    const height = Math.abs(end.y - start.y);
+
+    return (
+      <Rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill="rgba(0, 102, 255, 0.1)"
+        stroke="#0066ff"
+        strokeWidth={1}
+        dash={[4, 4]}
+      />
+    );
+  };
+
   return (
     <div ref={containerRef} className="w-full h-full bg-[#fafafa]" onContextMenu={(e) => e.preventDefault()}>
       <Stage
@@ -3336,6 +3598,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           {renderAssetPreview()}
           {renderDoorPreview()}
           {renderWindowPreview()}
+          {renderBoxSelection()}
           {renderCursor()}
         </Layer>
 

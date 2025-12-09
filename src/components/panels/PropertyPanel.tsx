@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useSelectionStore, useElementStore } from '@/store';
 import { DoorProperties } from './DoorProperties';
 import { WindowProperties } from './WindowProperties';
@@ -8,12 +9,19 @@ import { FurnitureProperties } from './FurnitureProperties';
 import { CounterProperties } from './CounterProperties';
 import { SpaceProperties } from './SpaceProperties';
 import { StairProperties } from './StairProperties';
+import { MultiEditPanel } from './MultiEditPanel';
 
 export function PropertyPanel() {
   const { getSelectedIds } = useSelectionStore();
   const { getElement } = useElementStore();
 
   const selectedIds = getSelectedIds();
+
+  // Get all selected elements for multi-edit
+  const selectedElements = useMemo(
+    () => selectedIds.map((id) => getElement(id)).filter((e) => e !== undefined),
+    [selectedIds, getElement]
+  );
 
   if (selectedIds.length === 0) {
     return (
@@ -26,16 +34,12 @@ export function PropertyPanel() {
     );
   }
 
+  // Multi-selection: Show MultiEditPanel
   if (selectedIds.length > 1) {
     return (
       <div className="p-4">
-        <h2 className="text-lg font-semibold mb-4">Eigenschaften</h2>
-        <p className="text-sm text-muted-foreground">
-          {selectedIds.length} Elemente ausgewählt.
-        </p>
-        <p className="text-sm text-muted-foreground mt-2">
-          Mehrfachbearbeitung wird noch nicht unterstützt.
-        </p>
+        <h2 className="text-lg font-semibold mb-4">Mehrfachbearbeitung</h2>
+        <MultiEditPanel selectedElements={selectedElements} />
       </div>
     );
   }

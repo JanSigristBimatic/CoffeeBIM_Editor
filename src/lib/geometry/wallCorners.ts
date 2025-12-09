@@ -1,60 +1,35 @@
 /**
- * Wall Corner Geometry Module
+ * Wall Corner Geometry Module - True Miter Algorithm
  *
- * Handles all corner/joint calculations for walls with different alignments.
- * This module solves the complex problem of connecting walls at corners
- * when they have different alignment sides (left/center/right).
+ * Handles wall corner/joint calculations using line-line intersection
+ * for mathematically correct miter cuts like in Revit.
  *
  * Key concepts:
- * - Each wall has an "alignment side" which is the reference edge
- * - At corners, we need to extend walls so their physical edges meet cleanly
- * - The extension amount depends on both walls' alignments and the corner angle
+ * - Each wall edge is treated as a parametric line
+ * - Corner points are found by intersecting edge lines
+ * - Extensions can be positive (extend) or negative (shorten)
+ * - Works for any corner angle, not just 90°
  */
 
 import type { BimElement, WallAlignmentSide } from '@/types/bim';
+import type { Point2D } from '@/types/geometry';
 
 // ============================================================================
 // Types
 // ============================================================================
 
 /**
- * Represents which physical edge of a wall we're referring to.
- * Looking from start to end of wall:
- * - 'left': The edge on the left side
- * - 'right': The edge on the right side
+ * A 2D line in parametric form: P = point + t * direction
  */
-export type WallEdge = 'left' | 'right';
+interface Line2D {
+  point: Point2D;
+  direction: { x: number; y: number };
+}
 
 /**
  * The turn direction at a corner when following wall paths
  */
 export type TurnDirection = 'left' | 'right' | 'straight' | 'back';
-
-/**
- * Corner configuration describing how two walls meet
- */
-export interface CornerConfig {
-  /** ID of the first wall */
-  wallAId: string;
-  /** ID of the second wall */
-  wallBId: string;
-  /** Which end of wall A is at the corner */
-  wallAEnd: 'start' | 'end';
-  /** Which end of wall B is at the corner */
-  wallBEnd: 'start' | 'end';
-  /** Alignment of wall A */
-  wallAAlignment: WallAlignmentSide;
-  /** Alignment of wall B */
-  wallBAlignment: WallAlignmentSide;
-  /** Thickness of wall A */
-  wallAThickness: number;
-  /** Thickness of wall B */
-  wallBThickness: number;
-  /** Angle between walls in radians (0 = parallel, PI/2 = perpendicular) */
-  cornerAngle: number;
-  /** Turn direction when going from wall A to wall B */
-  turnDirection: TurnDirection;
-}
 
 /**
  * Extension values for a single wall end at a corner.
@@ -65,6 +40,22 @@ export interface WallEndExtensions {
   leftEdge: number;
   /** Extension for the right edge (looking from start to end) */
   rightEdge: number;
+}
+
+/**
+ * Corner configuration describing how two walls meet
+ */
+export interface CornerConfig {
+  wallAId: string;
+  wallBId: string;
+  wallAEnd: 'start' | 'end';
+  wallBEnd: 'start' | 'end';
+  wallAAlignment: WallAlignmentSide;
+  wallBAlignment: WallAlignmentSide;
+  wallAThickness: number;
+  wallBThickness: number;
+  cornerAngle: number;
+  turnDirection: TurnDirection;
 }
 
 /**
@@ -85,14 +76,42 @@ export interface WallCornerAnalysis {
 }
 
 // ============================================================================
-// Helper Functions
+// Core Geometry Functions
 // ============================================================================
 
 /**
+ * Calculate line-line intersection point.
+ * Uses parametric form: P = point + t * direction
+ * Returns null if lines are parallel.
+ */
+function lineLineIntersection(line1: Line2D, line2: Line2D): Point2D | null {
+  const dx = line2.point.x - line1.point.x;
+  const dy = line2.point.y - line1.point.y;
+
+  // Cross product of directions (determinant)
+  const cross =
+    line1.direction.x * line2.direction.y -
+    line1.direction.y * line2.direction.x;
+
+  // Lines are parallel if cross product is near zero
+  if (Math.abs(cross) < 0.0001) {
+    return null;
+  }
+
+  // Solve for parameter t1 on line1
+  const t1 = (dx * line2.direction.y - dy * line2.direction.x) / cross;
+
+  return {
+    x: line1.point.x + t1 * line1.direction.x,
+    y: line1.point.y + t1 * line1.direction.y,
+  };
+}
+
+/**
  * Get the offset of each edge from the wall centerline based on alignment.
- * Returns [leftEdgeOffset, rightEdgeOffset] where:
- * - Negative offset = edge is on the "negative" side of centerline
- * - Positive offset = edge is on the "positive" side of centerline
+ * Looking from start to end:
+ * - left: offset in positive normal direction
+ * - right: offset in negative normal direction
  */
 export function getEdgeOffsets(
   alignment: WallAlignmentSide,
@@ -101,13 +120,13 @@ export function getEdgeOffsets(
   switch (alignment) {
     case 'left':
       // Reference edge (left) at centerline, wall extends to the right
-      return { left: 0, right: thickness };
+      return { left: 0, right: -thickness };
     case 'center':
       // Wall centered on centerline
-      return { left: -thickness / 2, right: thickness / 2 };
+      return { left: thickness / 2, right: -thickness / 2 };
     case 'right':
       // Reference edge (right) at centerline, wall extends to the left
-      return { left: -thickness, right: 0 };
+      return { left: thickness, right: 0 };
   }
 }
 
@@ -122,23 +141,26 @@ export function calculateTurnDirection(
   wallBEnd: 'start' | 'end'
 ): TurnDirection {
   // Adjust directions based on which ends meet
-  const dirA = wallAEnd === 'start'
-    ? { x: -wallADirection.x, y: -wallADirection.y }  // Reverse if start meets
-    : wallADirection;
-  const dirB = wallBEnd === 'start'
-    ? wallBDirection  // Keep if start (entering wall B)
-    : { x: -wallBDirection.x, y: -wallBDirection.y };  // Reverse if end meets
+  // We want the direction "into" the corner for wall A
+  // and the direction "out of" the corner for wall B
+  const dirA =
+    wallAEnd === 'start'
+      ? { x: -wallADirection.x, y: -wallADirection.y }
+      : wallADirection;
+  const dirB =
+    wallBEnd === 'start'
+      ? wallBDirection
+      : { x: -wallBDirection.x, y: -wallBDirection.y };
 
-  // Cross product Z component: dirA.x * dirB.y - dirA.y * dirB.x
+  // Cross product Z component
   const cross = dirA.x * dirB.y - dirA.y * dirB.x;
 
-  // Dot product for parallel/anti-parallel detection
+  // Dot product for parallel detection
   const dot = dirA.x * dirB.x + dirA.y * dirB.y;
 
   const epsilon = 0.001;
 
   if (Math.abs(cross) < epsilon) {
-    // Walls are parallel or anti-parallel
     return dot > 0 ? 'straight' : 'back';
   }
 
@@ -156,180 +178,215 @@ export function calculateCornerAngle(
   wallBEnd: 'start' | 'end'
 ): number {
   // Adjust directions so they point "into" the corner
-  const dirA = wallAEnd === 'start'
-    ? { x: -wallADirection.x, y: -wallADirection.y }
-    : wallADirection;
-  const dirB = wallBEnd === 'start'
-    ? wallBDirection
-    : { x: -wallBDirection.x, y: -wallBDirection.y };
+  const dirA =
+    wallAEnd === 'start'
+      ? { x: -wallADirection.x, y: -wallADirection.y }
+      : wallADirection;
+  const dirB =
+    wallBEnd === 'start'
+      ? wallBDirection
+      : { x: -wallBDirection.x, y: -wallBDirection.y };
 
-  // Angle between the two direction vectors
   const dot = dirA.x * dirB.x + dirA.y * dirB.y;
-  const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
-
-  return angle;
+  return Math.acos(Math.max(-1, Math.min(1, dot)));
 }
 
 // ============================================================================
-// Core Corner Calculation
+// True Miter Corner Calculation
 // ============================================================================
 
 /**
- * Calculate the extensions needed for both walls at a corner.
- * This is the main function that handles all alignment combinations.
+ * Calculate true miter extensions using line-line intersection.
+ *
+ * This is the core algorithm that makes wall corners work like Revit:
+ * 1. Create edge lines for each wall at the meeting point
+ * 2. Find where corresponding edges intersect
+ * 3. Calculate the signed distance from original edge to intersection
+ *
+ * The key insight: inner edges get NEGATIVE extensions (they shorten),
+ * while outer edges get POSITIVE extensions (they lengthen).
  */
-export function calculateCornerExtensions(config: CornerConfig): CornerSolution {
-  const {
-    wallAAlignment, wallBAlignment,
-    wallAThickness, wallBThickness,
-    cornerAngle, turnDirection
-  } = config;
+function calculateTrueMiterExtensions(
+  meetingPoint: Point2D,
+  wallADir: { x: number; y: number },
+  wallBDir: { x: number; y: number },
+  wallAEnd: 'start' | 'end',
+  wallBEnd: 'start' | 'end',
+  wallAAlignment: WallAlignmentSide,
+  wallBAlignment: WallAlignmentSide,
+  wallAThickness: number,
+  wallBThickness: number,
+  turnDirection: TurnDirection
+): CornerSolution {
+  const result: CornerSolution = {
+    wallA: { leftEdge: 0, rightEdge: 0 },
+    wallB: { leftEdge: 0, rightEdge: 0 },
+  };
 
-  // Get edge offsets for both walls
-  const edgesA = getEdgeOffsets(wallAAlignment, wallAThickness);
-  const edgesB = getEdgeOffsets(wallBAlignment, wallBThickness);
+  // No miter needed for parallel walls
+  if (turnDirection === 'straight' || turnDirection === 'back') {
+    return result;
+  }
 
-  // For a 90° corner (most common case), calculate extensions
-  // based on which edges meet and which need to extend
+  // Calculate perpendicular normals (pointing LEFT when looking from start to end)
+  const normalA = { x: -wallADir.y, y: wallADir.x };
+  const normalB = { x: -wallBDir.y, y: wallBDir.x };
 
-  if (Math.abs(cornerAngle - Math.PI / 2) < 0.1) {
-    // ~90° corner - use simplified perpendicular logic
-    return calculatePerpendicularCorner(
-      edgesA, edgesB,
-      wallAThickness, wallBThickness,
-      turnDirection,
-      config.wallAEnd, config.wallBEnd
+  // Get edge offsets based on alignment
+  const offsetsA = getEdgeOffsets(wallAAlignment, wallAThickness);
+  const offsetsB = getEdgeOffsets(wallBAlignment, wallBThickness);
+
+  // Adjust wall direction based on which end meets
+  // For wall A: if END meets, direction points INTO corner
+  // For wall A: if START meets, direction points AWAY from corner
+  const effectiveDirA =
+    wallAEnd === 'end'
+      ? wallADir
+      : { x: -wallADir.x, y: -wallADir.y };
+  const effectiveDirB =
+    wallBEnd === 'start'
+      ? wallBDir
+      : { x: -wallBDir.x, y: -wallBDir.y };
+
+  // Create edge lines for Wall A at meeting point
+  const leftEdgeA: Line2D = {
+    point: {
+      x: meetingPoint.x + normalA.x * offsetsA.left,
+      y: meetingPoint.y + normalA.y * offsetsA.left,
+    },
+    direction: wallADir,
+  };
+  const rightEdgeA: Line2D = {
+    point: {
+      x: meetingPoint.x + normalA.x * offsetsA.right,
+      y: meetingPoint.y + normalA.y * offsetsA.right,
+    },
+    direction: wallADir,
+  };
+
+  // Create edge lines for Wall B at meeting point
+  const leftEdgeB: Line2D = {
+    point: {
+      x: meetingPoint.x + normalB.x * offsetsB.left,
+      y: meetingPoint.y + normalB.y * offsetsB.left,
+    },
+    direction: wallBDir,
+  };
+  const rightEdgeB: Line2D = {
+    point: {
+      x: meetingPoint.x + normalB.x * offsetsB.right,
+      y: meetingPoint.y + normalB.y * offsetsB.right,
+    },
+    direction: wallBDir,
+  };
+
+  // Determine which edges are outer/inner based on turn direction and which ends meet
+  const isRightTurn = turnDirection === 'right';
+
+  // For wall A: which edge is on the outer side of the corner?
+  // At wall A's END with a right turn: right edge is outer
+  // At wall A's START with a right turn: left edge is outer (flipped)
+  const flipA = wallAEnd === 'start';
+  const aOuterIsRight = flipA ? !isRightTurn : isRightTurn;
+
+  // For wall B: which edge is on the outer side of the corner?
+  // At wall B's START with a right turn: left edge is outer
+  // At wall B's END with a right turn: right edge is outer (flipped)
+  const flipB = wallBEnd === 'end';
+  const bOuterIsRight = flipB ? isRightTurn : !isRightTurn;
+
+  // Find intersection points by intersecting corresponding edges
+  // Outer corner: where both outer edges meet
+  // Inner corner: where both inner edges meet
+  let outerIntersection: Point2D | null;
+  let innerIntersection: Point2D | null;
+
+  const aOuterEdge = aOuterIsRight ? rightEdgeA : leftEdgeA;
+  const aInnerEdge = aOuterIsRight ? leftEdgeA : rightEdgeA;
+  const bOuterEdge = bOuterIsRight ? rightEdgeB : leftEdgeB;
+  const bInnerEdge = bOuterIsRight ? leftEdgeB : rightEdgeB;
+
+  outerIntersection = lineLineIntersection(aOuterEdge, bOuterEdge);
+  innerIntersection = lineLineIntersection(aInnerEdge, bInnerEdge);
+
+  // Helper: calculate signed extension from edge point to intersection
+  // Positive = extend in wall direction, Negative = shorten
+  const calcExtension = (
+    intersection: Point2D | null,
+    edgePoint: Point2D,
+    direction: { x: number; y: number }
+  ): number => {
+    if (!intersection) return 0;
+    const dx = intersection.x - edgePoint.x;
+    const dy = intersection.y - edgePoint.y;
+    // Dot product gives signed distance along direction
+    return dx * direction.x + dy * direction.y;
+  };
+
+  // Calculate extensions for Wall A
+  if (aOuterIsRight) {
+    result.wallA.rightEdge = calcExtension(
+      outerIntersection,
+      rightEdgeA.point,
+      effectiveDirA
+    );
+    result.wallA.leftEdge = calcExtension(
+      innerIntersection,
+      leftEdgeA.point,
+      effectiveDirA
+    );
+  } else {
+    result.wallA.leftEdge = calcExtension(
+      outerIntersection,
+      leftEdgeA.point,
+      effectiveDirA
+    );
+    result.wallA.rightEdge = calcExtension(
+      innerIntersection,
+      rightEdgeA.point,
+      effectiveDirA
     );
   }
 
-  // For other angles, use general miter calculation
-  return calculateAngledCorner(
-    edgesA, edgesB,
-    wallAThickness, wallBThickness,
-    cornerAngle, turnDirection,
-    config.wallAEnd, config.wallBEnd
-  );
-}
-
-/**
- * Calculate extensions for a ~90° perpendicular corner.
- *
- * SIMPLIFIED APPROACH:
- * - Only the OUTER edge extends (to cover the other wall)
- * - The INNER edge stays at 0 (no extension)
- * - This creates a clean diagonal miter cut
- *
- * Turn direction determines which edge is outer:
- * - Right turn at wall end: right edge is outer
- * - Left turn at wall end: left edge is outer
- * - At wall start: reversed
- */
-function calculatePerpendicularCorner(
-  edgesA: { left: number; right: number },
-  edgesB: { left: number; right: number },
-  _thicknessA: number,
-  _thicknessB: number,
-  turnDirection: TurnDirection,
-  wallAEnd: 'start' | 'end',
-  wallBEnd: 'start' | 'end'
-): CornerSolution {
-  const result: CornerSolution = {
-    wallA: { leftEdge: 0, rightEdge: 0 },
-    wallB: { leftEdge: 0, rightEdge: 0 }
-  };
-
-  // Handle parallel/anti-parallel walls (no corner)
-  if (turnDirection === 'straight' || turnDirection === 'back') {
-    return result;
-  }
-
-  // Determine which edge is outer for each wall
-  const isWallAEnd = wallAEnd === 'end';
-  const isRightTurn = turnDirection === 'right';
-  const aOuterIsRight = isWallAEnd ? isRightTurn : !isRightTurn;
-
-  const isWallBStart = wallBEnd === 'start';
-  const bOuterIsRight = isWallBStart ? !isRightTurn : isRightTurn;
-
-  // Get the other wall's offset at the outer edge (how far it extends from centerline)
-  // This is how much THIS wall needs to extend to cover the OTHER wall
-  const bOuterOffset = bOuterIsRight ? Math.abs(edgesB.right) : Math.abs(edgesB.left);
-  const aOuterOffset = aOuterIsRight ? Math.abs(edgesA.right) : Math.abs(edgesA.left);
-
-  // ONLY extend the outer edge - inner edge stays at 0
-  if (aOuterIsRight) {
-    result.wallA.rightEdge = bOuterOffset;
-    result.wallA.leftEdge = 0;  // Inner edge: no extension
-  } else {
-    result.wallA.leftEdge = bOuterOffset;
-    result.wallA.rightEdge = 0;  // Inner edge: no extension
-  }
-
+  // Calculate extensions for Wall B
   if (bOuterIsRight) {
-    result.wallB.rightEdge = aOuterOffset;
-    result.wallB.leftEdge = 0;
+    result.wallB.rightEdge = calcExtension(
+      outerIntersection,
+      rightEdgeB.point,
+      effectiveDirB
+    );
+    result.wallB.leftEdge = calcExtension(
+      innerIntersection,
+      leftEdgeB.point,
+      effectiveDirB
+    );
   } else {
-    result.wallB.leftEdge = aOuterOffset;
-    result.wallB.rightEdge = 0;
+    result.wallB.leftEdge = calcExtension(
+      outerIntersection,
+      leftEdgeB.point,
+      effectiveDirB
+    );
+    result.wallB.rightEdge = calcExtension(
+      innerIntersection,
+      rightEdgeB.point,
+      effectiveDirB
+    );
   }
 
   return result;
 }
 
 /**
- * Calculate extensions for a non-90° angled corner.
- *
- * SIMPLIFIED APPROACH (same as perpendicular):
- * - Only the OUTER edge extends
- * - Extension is based on the other wall's thickness/offset
- * - No trigonometric scaling (keeps it simple and predictable)
+ * Calculate the extensions needed for both walls at a corner.
+ * Main entry point that dispatches to the true miter algorithm.
  */
-function calculateAngledCorner(
-  edgesA: { left: number; right: number },
-  edgesB: { left: number; right: number },
-  _thicknessA: number,
-  _thicknessB: number,
-  _cornerAngle: number,
-  turnDirection: TurnDirection,
-  wallAEnd: 'start' | 'end',
-  wallBEnd: 'start' | 'end'
-): CornerSolution {
-  const result: CornerSolution = {
+export function calculateCornerExtensions(_config: CornerConfig): CornerSolution {
+  // For now, we need the wall directions - we'll get them from the analysis function
+  // This function is kept for API compatibility but the real work is in analyzeWallCorners
+  return {
     wallA: { leftEdge: 0, rightEdge: 0 },
-    wallB: { leftEdge: 0, rightEdge: 0 }
+    wallB: { leftEdge: 0, rightEdge: 0 },
   };
-
-  // Handle parallel/anti-parallel walls
-  if (turnDirection === 'straight' || turnDirection === 'back') {
-    return result;
-  }
-
-  // Same logic as perpendicular - just extend outer edge
-  const isWallAEnd = wallAEnd === 'end';
-  const isRightTurn = turnDirection === 'right';
-  const aOuterIsRight = isWallAEnd ? isRightTurn : !isRightTurn;
-
-  const isWallBStart = wallBEnd === 'start';
-  const bOuterIsRight = isWallBStart ? !isRightTurn : isRightTurn;
-
-  // Get outer edge offsets
-  const bOuterOffset = bOuterIsRight ? Math.abs(edgesB.right) : Math.abs(edgesB.left);
-  const aOuterOffset = aOuterIsRight ? Math.abs(edgesA.right) : Math.abs(edgesA.left);
-
-  // Only extend outer edge
-  if (aOuterIsRight) {
-    result.wallA.rightEdge = bOuterOffset;
-  } else {
-    result.wallA.leftEdge = bOuterOffset;
-  }
-
-  if (bOuterIsRight) {
-    result.wallB.rightEdge = aOuterOffset;
-  } else {
-    result.wallB.leftEdge = aOuterOffset;
-  }
-
-  return result;
 }
 
 // ============================================================================
@@ -337,8 +394,34 @@ function calculateAngledCorner(
 // ============================================================================
 
 /**
+ * Get the direction vector of a wall (from start to end), normalized
+ */
+function getWallDirection(
+  start: Point2D,
+  end: Point2D
+): { x: number; y: number } {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 0.001) return { x: 1, y: 0 };
+  return { x: dx / len, y: dy / len };
+}
+
+/**
+ * Calculate distance between two 2D points
+ */
+function distance(a: Point2D, b: Point2D): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
  * Analyze all corners for a specific wall.
  * Returns the extensions needed for both ends of the wall.
+ *
+ * This function finds all walls connecting to this wall's endpoints
+ * and calculates the true miter extensions for clean corner joints.
  */
 export function analyzeWallCorners(
   wall: BimElement,
@@ -348,7 +431,7 @@ export function analyzeWallCorners(
   const result: WallCornerAnalysis = {
     wallId: wall.id,
     startExtensions: { leftEdge: 0, rightEdge: 0 },
-    endExtensions: { leftEdge: 0, rightEdge: 0 }
+    endExtensions: { leftEdge: 0, rightEdge: 0 },
   };
 
   if (wall.type !== 'wall' || !wall.wallData) return result;
@@ -359,9 +442,10 @@ export function analyzeWallCorners(
   const wallAlignment = wall.wallData.alignmentSide || 'center';
   const wallThickness = wall.wallData.thickness || 0.2;
 
-  // Find walls connecting at start
+  // Check each other wall for connections
   for (const other of allWalls) {
-    if (other.id === wall.id || other.type !== 'wall' || !other.wallData) continue;
+    if (other.id === wall.id || other.type !== 'wall' || !other.wallData)
+      continue;
 
     const otherStart = other.wallData.startPoint;
     const otherEnd = other.wallData.endPoint;
@@ -369,90 +453,159 @@ export function analyzeWallCorners(
     const otherAlignment = other.wallData.alignmentSide || 'center';
     const otherThickness = other.wallData.thickness || 0.2;
 
-    // Check start connections
-    const distToOtherStart = distance(wallStart, otherStart);
-    const distToOtherEnd = distance(wallStart, otherEnd);
+    // Check connections at THIS wall's START point
+    const distStartToOtherStart = distance(wallStart, otherStart);
+    const distStartToOtherEnd = distance(wallStart, otherEnd);
 
-    if (distToOtherStart < tolerance || distToOtherEnd < tolerance) {
-      const otherEnd_ = distToOtherStart < tolerance ? 'start' : 'end';
-      const turnDir = calculateTurnDirection(wallDir, otherDir, 'start', otherEnd_);
-      const angle = calculateCornerAngle(wallDir, otherDir, 'start', otherEnd_);
+    if (distStartToOtherStart < tolerance || distStartToOtherEnd < tolerance) {
+      const otherEndType: 'start' | 'end' =
+        distStartToOtherStart < tolerance ? 'start' : 'end';
+      const meetingPoint =
+        otherEndType === 'start' ? otherStart : otherEnd;
 
-      const config: CornerConfig = {
-        wallAId: wall.id,
-        wallBId: other.id,
-        wallAEnd: 'start',
-        wallBEnd: otherEnd_,
-        wallAAlignment: wallAlignment,
-        wallBAlignment: otherAlignment,
-        wallAThickness: wallThickness,
-        wallBThickness: otherThickness,
-        cornerAngle: angle,
-        turnDirection: turnDir
-      };
+      const turnDir = calculateTurnDirection(
+        wallDir,
+        otherDir,
+        'start',
+        otherEndType
+      );
 
-      const solution = calculateCornerExtensions(config);
+      const solution = calculateTrueMiterExtensions(
+        meetingPoint,
+        wallDir,
+        otherDir,
+        'start',
+        otherEndType,
+        wallAlignment,
+        otherAlignment,
+        wallThickness,
+        otherThickness,
+        turnDir
+      );
 
-      // Accumulate extensions (in case multiple walls connect)
-      result.startExtensions.leftEdge = Math.max(result.startExtensions.leftEdge, solution.wallA.leftEdge);
-      result.startExtensions.rightEdge = Math.max(result.startExtensions.rightEdge, solution.wallA.rightEdge);
+      // Accumulate extensions (use max absolute value to handle multiple connections)
+      result.startExtensions.leftEdge =
+        Math.abs(solution.wallA.leftEdge) >
+        Math.abs(result.startExtensions.leftEdge)
+          ? solution.wallA.leftEdge
+          : result.startExtensions.leftEdge;
+      result.startExtensions.rightEdge =
+        Math.abs(solution.wallA.rightEdge) >
+        Math.abs(result.startExtensions.rightEdge)
+          ? solution.wallA.rightEdge
+          : result.startExtensions.rightEdge;
     }
 
-    // Check end connections
+    // Check connections at THIS wall's END point
     const distEndToOtherStart = distance(wallEnd, otherStart);
     const distEndToOtherEnd = distance(wallEnd, otherEnd);
 
     if (distEndToOtherStart < tolerance || distEndToOtherEnd < tolerance) {
-      const otherEnd_ = distEndToOtherStart < tolerance ? 'start' : 'end';
-      const turnDir = calculateTurnDirection(wallDir, otherDir, 'end', otherEnd_);
-      const angle = calculateCornerAngle(wallDir, otherDir, 'end', otherEnd_);
+      const otherEndType: 'start' | 'end' =
+        distEndToOtherStart < tolerance ? 'start' : 'end';
+      const meetingPoint =
+        otherEndType === 'start' ? otherStart : otherEnd;
 
-      const config: CornerConfig = {
-        wallAId: wall.id,
-        wallBId: other.id,
-        wallAEnd: 'end',
-        wallBEnd: otherEnd_,
-        wallAAlignment: wallAlignment,
-        wallBAlignment: otherAlignment,
-        wallAThickness: wallThickness,
-        wallBThickness: otherThickness,
-        cornerAngle: angle,
-        turnDirection: turnDir
-      };
+      const turnDir = calculateTurnDirection(
+        wallDir,
+        otherDir,
+        'end',
+        otherEndType
+      );
 
-      const solution = calculateCornerExtensions(config);
+      const solution = calculateTrueMiterExtensions(
+        meetingPoint,
+        wallDir,
+        otherDir,
+        'end',
+        otherEndType,
+        wallAlignment,
+        otherAlignment,
+        wallThickness,
+        otherThickness,
+        turnDir
+      );
 
-      result.endExtensions.leftEdge = Math.max(result.endExtensions.leftEdge, solution.wallA.leftEdge);
-      result.endExtensions.rightEdge = Math.max(result.endExtensions.rightEdge, solution.wallA.rightEdge);
+      // Accumulate extensions
+      result.endExtensions.leftEdge =
+        Math.abs(solution.wallA.leftEdge) >
+        Math.abs(result.endExtensions.leftEdge)
+          ? solution.wallA.leftEdge
+          : result.endExtensions.leftEdge;
+      result.endExtensions.rightEdge =
+        Math.abs(solution.wallA.rightEdge) >
+        Math.abs(result.endExtensions.rightEdge)
+          ? solution.wallA.rightEdge
+          : result.endExtensions.rightEdge;
     }
   }
 
   return result;
 }
 
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
 /**
- * Get the direction vector of a wall (from start to end), normalized
+ * Calculate corner vertices for a wall with miter extensions.
+ * Returns the 4 corner points of the wall profile in world coordinates.
+ *
+ * This is useful for 2D rendering where we need actual vertex positions
+ * rather than extension distances.
  */
-function getWallDirection(
-  start: { x: number; y: number },
-  end: { x: number; y: number }
-): { x: number; y: number } {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  if (len < 0.001) return { x: 1, y: 0 }; // Default direction for zero-length
-  return { x: dx / len, y: dy / len };
-}
+export function calculateWallCornerVertices(
+  wall: BimElement,
+  allWalls: BimElement[]
+): { startLeft: Point2D; startRight: Point2D; endLeft: Point2D; endRight: Point2D } | null {
+  if (!wall.wallData) return null;
 
-/**
- * Calculate distance between two 2D points
- */
-function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  return Math.sqrt(dx * dx + dy * dy);
+  const { startPoint, endPoint, thickness, alignmentSide } = wall.wallData;
+  const alignment = alignmentSide || 'center';
+
+  // Get wall direction and normal
+  const dir = getWallDirection(startPoint, endPoint);
+  const normal = { x: -dir.y, y: dir.x }; // Left-pointing normal
+
+  // Get edge offsets
+  const offsets = getEdgeOffsets(alignment, thickness);
+
+  // Base corner positions (without miter)
+  const baseStartLeft = {
+    x: startPoint.x + normal.x * offsets.left,
+    y: startPoint.y + normal.y * offsets.left,
+  };
+  const baseStartRight = {
+    x: startPoint.x + normal.x * offsets.right,
+    y: startPoint.y + normal.y * offsets.right,
+  };
+  const baseEndLeft = {
+    x: endPoint.x + normal.x * offsets.left,
+    y: endPoint.y + normal.y * offsets.left,
+  };
+  const baseEndRight = {
+    x: endPoint.x + normal.x * offsets.right,
+    y: endPoint.y + normal.y * offsets.right,
+  };
+
+  // Get corner analysis for miter extensions
+  const analysis = analyzeWallCorners(wall, allWalls);
+
+  // Apply extensions to get final corner positions
+  // Start extensions move in NEGATIVE wall direction (towards start)
+  // End extensions move in POSITIVE wall direction (towards end)
+  return {
+    startLeft: {
+      x: baseStartLeft.x - dir.x * analysis.startExtensions.leftEdge,
+      y: baseStartLeft.y - dir.y * analysis.startExtensions.leftEdge,
+    },
+    startRight: {
+      x: baseStartRight.x - dir.x * analysis.startExtensions.rightEdge,
+      y: baseStartRight.y - dir.y * analysis.startExtensions.rightEdge,
+    },
+    endLeft: {
+      x: baseEndLeft.x + dir.x * analysis.endExtensions.leftEdge,
+      y: baseEndLeft.y + dir.y * analysis.endExtensions.leftEdge,
+    },
+    endRight: {
+      x: baseEndRight.x + dir.x * analysis.endExtensions.rightEdge,
+      y: baseEndRight.y + dir.y * analysis.endExtensions.rightEdge,
+    },
+  };
 }

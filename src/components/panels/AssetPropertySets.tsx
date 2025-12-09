@@ -296,6 +296,26 @@ export function AssetPropertySets({ element }: AssetPropertySetsProps) {
     [element, updateElement]
   );
 
+  // Helper to update multiple properties in a property set at once (avoids race conditions)
+  const updatePsetProperties = useCallback(
+    (psetName: string, updates: Record<string, string | number | boolean | null>) => {
+      const updatedProperties = element.properties.map((pset) =>
+        pset.name === psetName
+          ? {
+              ...pset,
+              properties: {
+                ...pset.properties,
+                ...updates,
+              },
+            }
+          : pset
+      );
+
+      updateElement(element.id, { properties: updatedProperties });
+    },
+    [element, updateElement]
+  );
+
   // Get property sets
   const grunddaten = getPset('Pset_Grunddaten');
   const kaufdaten = getPset('Pset_KaufdatenGarantie');
@@ -350,10 +370,14 @@ export function AssetPropertySets({ element }: AssetPropertySetsProps) {
             label="IFC Gerätetyp"
             value={(grunddaten.properties.IfcElectricApplianceType as string) || ''}
             onChange={(v) => {
-              updatePsetProperty('Pset_Grunddaten', 'IfcElectricApplianceType', v);
-              // Reset CoffeeEquipmentType if not USERDEFINED
+              // Update both properties at once to avoid race condition
               if (v !== 'USERDEFINED') {
-                updatePsetProperty('Pset_Grunddaten', 'CoffeeEquipmentType', '');
+                updatePsetProperties('Pset_Grunddaten', {
+                  IfcElectricApplianceType: v,
+                  CoffeeEquipmentType: '',
+                });
+              } else {
+                updatePsetProperty('Pset_Grunddaten', 'IfcElectricApplianceType', v);
               }
             }}
             options={IFC_APPLIANCE_OPTIONS}

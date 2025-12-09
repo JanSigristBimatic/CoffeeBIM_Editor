@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useToolStore, useSelectionStore, useElementStore, useViewStore, usePdfUnderlayStore, useMeasurementStore } from '@/store';
+import { useToolStore, useSelectionStore, useElementStore, useViewStore, usePdfUnderlayStore, useMeasurementStore, useProjectStore } from '@/store';
 import type { ToolType } from '@/types/tools';
 import { useHistory } from './useHistory';
 
@@ -8,8 +8,9 @@ import { useHistory } from './useHistory';
  */
 export function useKeyboardShortcuts() {
   const { setActiveTool, cancelCurrentOperation } = useToolStore();
-  const { getSelectedIds, clearSelection } = useSelectionStore();
-  const { removeElements, moveElements } = useElementStore();
+  const { getSelectedIds, clearSelection, selectMultiple, cancelBoxSelect } = useSelectionStore();
+  const { removeElements, moveElements, getElementsByStorey } = useElementStore();
+  const { activeStoreyId } = useProjectStore();
   const { toggleGrid, cycleViewMode, toggleSnapOrthogonal, toggleDimensions, snapSize, triggerZoomToExtents } = useViewStore();
   const { isLoaded: hasPdf, toggleVisible: togglePdfVisible } = usePdfUnderlayStore();
   const { selectedMeasurementId, removeSelectedMeasurement, cancelPlacement } = useMeasurementStore();
@@ -79,6 +80,9 @@ export function useKeyboardShortcuts() {
         event.preventDefault();
         const { activeTool } = useToolStore.getState();
 
+        // Cancel box selection if active
+        cancelBoxSelect();
+
         // Cancel measurement placement if active
         if (activeTool === 'measure') {
           cancelPlacement();
@@ -90,6 +94,17 @@ export function useKeyboardShortcuts() {
           setActiveTool('select');
         }
         clearSelection();
+        return;
+      }
+
+      // Ctrl+A - select all elements in current storey
+      if (ctrl && !shift && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        if (activeStoreyId) {
+          const elements = getElementsByStorey(activeStoreyId);
+          const ids = elements.map((e) => e.id);
+          selectMultiple(ids);
+        }
         return;
       }
 
@@ -196,7 +211,6 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Ctrl+A - select all (TODO: implement)
       // Ctrl+E - export (TODO: implement)
     };
 
@@ -209,9 +223,13 @@ export function useKeyboardShortcuts() {
     setActiveTool,
     cancelCurrentOperation,
     clearSelection,
+    selectMultiple,
+    cancelBoxSelect,
     getSelectedIds,
     removeElements,
     moveElements,
+    getElementsByStorey,
+    activeStoreyId,
     toggleGrid,
     cycleViewMode,
     toggleSnapOrthogonal,
