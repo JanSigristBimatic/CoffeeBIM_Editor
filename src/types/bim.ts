@@ -530,22 +530,6 @@ export const GASTRO_SPACE_COLORS: Record<GastroSpaceCategory, string> = {
 };
 
 /**
- * Icon names for Gastro Space Categories (Lucide icons)
- */
-export const GASTRO_SPACE_ICONS: Record<GastroSpaceCategory, string> = {
-  GASTRAUM: 'Armchair',
-  BAR: 'Coffee',
-  KUECHE: 'ChefHat',
-  LAGER: 'Package',
-  SANITAER: 'Bath',
-  PERSONAL: 'Briefcase',
-  EINGANG: 'DoorOpen',
-  TERRASSE: 'Sun',
-  TECHNIK: 'Settings',
-  SONSTIGES: 'HelpCircle',
-};
-
-/**
  * Space-specific data (IfcSpace)
  * Represents a bounded area within a building storey
  */
@@ -553,8 +537,11 @@ export interface SpaceData {
   /** Closed boundary polygon defining the space outline (floor plan) */
   boundaryPolygon: Point2D[];
 
-  /** Calculated floor area in square meters */
+  /** Calculated gross floor area in square meters (Bruttofläche) */
   area: number;
+
+  /** Calculated net floor area in square meters (Nettofläche) - excludes columns and counters */
+  netFloorArea?: number;
 
   /** Calculated perimeter in meters */
   perimeter: number;

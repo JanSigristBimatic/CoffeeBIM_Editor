@@ -49,8 +49,13 @@ export {
   updateSpaceProperties,
   renameSpace,
   getSpaceArea,
+  getSpaceNetArea,
   getSpaceVolume,
+  getSpaceNetVolume,
   isExternalSpace,
+  calculateNetFloorArea,
+  updateSpaceNetFloorArea,
+  recalculateAllSpacesNetArea,
 } from './Space';
 export type { CreateSpaceParams, CreateSpaceFromPolygonParams } from './Space';
 export {

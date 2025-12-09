@@ -7,7 +7,7 @@ import {
   RectangleHorizontal,
   ScanSearch,
   PenTool,
-  Stairs,
+  TrendingUp,
   Grid2x2,
   Ruler,
 } from 'lucide-react';
@@ -29,7 +29,7 @@ export function ToolSelectionGroup() {
       <ToolButton tool="window" icon={<Grid2x2 size={20} />} label="Fenster" shortcut="F" />
       <ToolButton tool="column" icon={<Columns3 size={20} />} label="Saule" shortcut="S" />
       <ToolButton tool="counter" icon={<RectangleHorizontal size={20} />} label="Theke" shortcut="K" />
-      <ToolButton tool="stair" icon={<Stairs size={20} />} label="Treppe" shortcut="Shift+S" />
+      <ToolButton tool="stair" icon={<TrendingUp size={20} />} label="Treppe" shortcut="Shift+S" />
       <ToolButton
         tool="space-detect"
         icon={<ScanSearch size={20} />}

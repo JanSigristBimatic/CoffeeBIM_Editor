@@ -146,39 +146,64 @@ interface PropertySet {
 
 ## Feature-Übersicht
 
-### Phase 1 – MVP (Grundfunktionen)
+### Implementiert
 
-- [ ] **Projekthierarchie:** IfcProject, IfcSite, IfcBuilding, IfcBuildingStorey anlegen/bearbeiten
-- [ ] **Wände:** Platzieren, Länge/Höhe/Dicke anpassen
-- [ ] **Türen & Fenster:** In Wände einfügen (automatische Öffnung)
-- [ ] **Säulen:** Einfache Stützen platzieren
-- [ ] **IFC-Export:** Modell als .ifc-Datei herunterladen
-- [ ] **2D-/3D-Ansicht:** Umschalten zwischen Grundriss und 3D
+#### Architektur-Elemente
+- [x] **Projekthierarchie:** IfcProject, IfcSite, IfcBuilding, IfcBuildingStorey anlegen/bearbeiten
+- [x] **Wände:** Platzieren, Länge/Höhe/Dicke anpassen, Snapping
+- [x] **Türen:** In Wände einfügen (automatische Öffnung), Typen: single/double/sliding
+- [x] **Fenster:** In Wände einfügen (automatische Öffnung), Typen: single/double/fixed
+- [x] **Säulen:** Rechteckig und rund, frei platzierbar
+- [x] **Böden & Decken:** IfcSlab mit Polygon-Zeichnung
+- [x] **Treppen:** Gerade Treppenläufe nach DIN 18065, Stufenberechnung
 
-### Phase 2 – Räume & Einrichtung
+#### Räume & Einrichtung
+- [x] **Automatische Raumerkennung:** Geschlossene Wandzüge → IfcSpace
+- [x] **Manuelle Raumzeichnung:** Polygon zeichnen → IfcSpace
+- [x] **Raumvisualisierung:** Farbige Flächen mit Gastro-Kategorien (Gastraum, Bar, Küche, etc.)
+- [x] **Flächenberechnung:** Brutto-/Nettofläche, Umfang aus IfcSpace
+- [x] **Theken-Tool:** Pfad zeichnen → Tiefe/Höhe → Extrusion mit Kick-Space
+- [x] **Möbel/Assets:** GLB/GLTF/OBJ Import, Asset-Bibliothek
+- [x] **Gastronomie-Geräte:** IFC-konforme Typen (Espressomaschine, Kaffeemühle, etc.)
 
-- [ ] **Automatische Raumerkennung:** Geschlossene Wandzüge → IfcSpace
-- [ ] **Raumvisualisierung:** Farbige Flächen/Volumen für Räume
-- [ ] **Möbel-Bibliothek:** Vordefinierte Objekte (Tische, Stühle, Regale)
-- [ ] **Gastronomie-Geräte:** Kaffeemaschinen, Mühlen, Kühlschränke
-- [ ] **OBJ-Import:** Eigene 3D-Objekte laden
-- [ ] **CSV-Import:** Attribute/Property-Sets aus CSV zuweisen
-- [ ] **Böden & Decken:** IfcSlab für Geschossflächen
+#### Editor-Funktionen
+- [x] **2D-/3D-Ansicht:** Split-View, umschaltbar
+- [x] **PDF-Underlay:** Plan hinterlegen, kalibrieren (2-Punkt-Kalibrierung)
+- [x] **Bemaßungen:** Manuelle Maßlinien platzieren
+- [x] **IFC-Export:** Modell als .ifc-Datei herunterladen
+- [x] **IFC-Import:** Grundfunktion vorhanden (siehe Known Issues)
+- [x] **Snapping:** Grid, Endpunkte, Wandmitte
+- [x] **Transform:** Verschieben, Drehen mit Gizmo
+- [x] **Distanzeingabe:** Numerische Eingabe für Wandlängen
 
-### Phase 3 – Spezial-Tools
+#### Interaktionen
+- [x] Elemente **auswählen** (Klick)
+- [x] Elemente **verschieben** (Drag, Snapping an Grid/Wände)
+- [x] Elemente **drehen** (Transform-Gizmo)
+- [x] **Parameter-Panel:** Direktes Bearbeiten von Maßen und Attributen
+- [x] **Hierarchy-Panel:** Projekt-/Geschoss-Navigation
 
-- [ ] **Theken-Tool:** Pfad zeichnen → Breite/Höhe → Extrusion
-- [ ] **Treppen/Rampen:** Einfache Treppenläufe
-- [ ] **IFC-Import:** Einfache IFC-Modelle laden und erweitern
-- [ ] **Flächenberechnung:** Raumflächen aus IfcSpace
+---
 
-### Interaktionen (alle Phasen)
+### Known Issues
 
-- Elemente **auswählen** (Klick, Box-Selektion)
-- Elemente **verschieben** (Drag, Snapping an Grid/Wände)
-- Elemente **drehen** (90°-Schritte oder frei)
-- Elemente **skalieren** (proportional oder achsenweise)
-- **Parameter-Panel:** Direktes Bearbeiten von Maßen und Attributen
+| Problem | Beschreibung | Priorität |
+|---------|--------------|-----------|
+| **IFC-Import** | Import von komplexen IFC-Modellen unvollständig, Geometrie-Parsing fehlerhaft | Hoch |
+| **Asset-Größen** | 3D-Assets nicht optimiert, Performance-Probleme bei vielen Objekten | Mittel |
+
+---
+
+### Geplante Features
+
+| Feature | Beschreibung | Phase |
+|---------|--------------|-------|
+| **Schnitte / Sections** | 2D-Schnittansichten generieren | Nächste |
+| **2D-Zeichnen** | Linien, Polygone direkt in 2D zeichnen | Nächste |
+| **AI-Visualisierung** | Integration mit NanoBanana o.ä. für Renderings | Zukunft |
+| **CSV-Import** | Attribute/Property-Sets aus CSV zuweisen | Zukunft |
+| **Rampen** | IfcRamp für barrierefreie Zugänge | Zukunft |
+| **Collaboration** | Multi-User, Cloud-Speicherung | Zukunft |
 
 ---
 

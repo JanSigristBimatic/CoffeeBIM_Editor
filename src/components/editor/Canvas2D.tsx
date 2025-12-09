@@ -4,11 +4,14 @@ import type { Stage as StageType } from 'konva/lib/Stage';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useElementStore, useViewStore, useSelectionStore, useProjectStore, useToolStore } from '@/store';
 import type { BimElement } from '@/types/bim';
+import { DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT } from '@/types/bim';
+import type { Point2D } from '@/types/geometry';
 import {
   generateElementDimensions,
   calculateDimensionLinePoints,
   normalizeTextRotation,
 } from '@/lib/geometry';
+import { offsetPath, createCounterPolygon } from '@/lib/geometry/pathOffset';
 import { DIMENSION_COLORS } from '@/types/dimensions';
 
 // Constants for CAD rendering
@@ -45,11 +48,22 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   const [dimensions, setDimensions] = useState({ width: propWidth ?? 800, height: propHeight ?? 600 });
 
   // Store hooks
-  const { cad2dZoom, cad2dPanX, cad2dPanY, setCad2dZoom, setCad2dPan, showGrid, gridSize, showDimensions, dimensionSettings } = useViewStore();
-  const { getAllElements, getElementsByStorey } = useElementStore();
+  const { cad2dZoom, cad2dPanX, cad2dPanY, setCad2dZoom, setCad2dPan, showGrid, gridSize, showDimensions, dimensionSettings, snapSettings } = useViewStore();
+  const { getAllElements, getElementsByStorey, addElement } = useElementStore();
   const { selectedIds, select, clearSelection, toggleSelection } = useSelectionStore();
   const { activeStoreyId } = useProjectStore();
-  const { activeTool } = useToolStore();
+  const {
+    activeTool,
+    wallPlacement,
+    setWallStartPoint,
+    setWallPreviewEndPoint,
+    resetWallPlacement,
+    setCursorPosition,
+    cancelCurrentOperation,
+  } = useToolStore();
+
+  // Local state for cursor position in world coordinates
+  const [cursorWorldPos, setCursorWorldPos] = useState<Point2D | null>(null);
 
   // Get elements for current storey
   const elements = activeStoreyId ? getElementsByStorey(activeStoreyId) : getAllElements();
@@ -69,6 +83,51 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     window.addEventListener('resize', updateDimensions);
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
+
+  // Keyboard handler for Escape to cancel operations
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        cancelCurrentOperation();
+        setCursorWorldPos(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cancelCurrentOperation]);
+
+  // World to screen coordinates
+  const worldToScreen = useCallback(
+    (x: number, y: number) => ({
+      x: x * cad2dZoom + cad2dPanX + dimensions.width / 2,
+      y: -y * cad2dZoom + cad2dPanY + dimensions.height / 2, // Flip Y for CAD convention
+    }),
+    [cad2dZoom, cad2dPanX, cad2dPanY, dimensions]
+  );
+
+  // Screen to world coordinates (inverse of worldToScreen)
+  const screenToWorld = useCallback(
+    (screenX: number, screenY: number): Point2D => ({
+      x: (screenX - cad2dPanX - dimensions.width / 2) / cad2dZoom,
+      y: -(screenY - cad2dPanY - dimensions.height / 2) / cad2dZoom, // Flip Y back
+    }),
+    [cad2dZoom, cad2dPanX, cad2dPanY, dimensions]
+  );
+
+  // Apply grid snapping if enabled
+  const applyGridSnap = useCallback(
+    (point: Point2D): Point2D => {
+      if (!snapSettings.enabled || !snapSettings.grid) {
+        return point;
+      }
+      return {
+        x: Math.round(point.x / gridSize) * gridSize,
+        y: Math.round(point.y / gridSize) * gridSize,
+      };
+    },
+    [snapSettings, gridSize]
+  );
 
   // CAD Navigation: Zoom with mouse wheel
   const handleWheel = useCallback(
@@ -127,9 +186,34 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         const dy = e.evt.clientY - lastPanPos.y;
         setCad2dPan(cad2dPanX + dx, cad2dPanY + dy);
         setLastPanPos({ x: e.evt.clientX, y: e.evt.clientY });
+        return;
+      }
+
+      // Track cursor position for active drawing tools
+      if (activeTool !== 'select' && activeTool !== 'pan' && activeTool !== 'orbit') {
+        const stage = stageRef.current;
+        if (!stage) return;
+
+        const pointer = stage.getPointerPosition();
+        if (!pointer) return;
+
+        // Convert screen to world coordinates
+        const worldPos = screenToWorld(pointer.x, pointer.y);
+        const snappedPos = applyGridSnap(worldPos);
+
+        // Update local cursor state
+        setCursorWorldPos(snappedPos);
+
+        // Update global cursor position for snap preview
+        setCursorPosition(snappedPos);
+
+        // Update wall preview end point if placing wall
+        if (activeTool === 'wall' && wallPlacement.isPlacing) {
+          setWallPreviewEndPoint(snappedPos);
+        }
       }
     },
-    [isPanning, lastPanPos, cad2dPanX, cad2dPanY, setCad2dPan]
+    [isPanning, lastPanPos, cad2dPanX, cad2dPanY, setCad2dPan, activeTool, screenToWorld, applyGridSnap, setCursorPosition, wallPlacement.isPlacing, setWallPreviewEndPoint]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -157,23 +241,108 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     [activeTool, select, toggleSelection]
   );
 
-  // Handle stage click to clear selection
-  const handleStageClick = useCallback(
-    (e: KonvaEventObject<MouseEvent>) => {
-      if (activeTool === 'select' && e.target === stageRef.current) {
-        clearSelection();
+  // Handle wall tool click - two-click placement
+  const handleWallClick = useCallback(
+    (point: Point2D) => {
+      if (!wallPlacement.isPlacing) {
+        // First click - set start point
+        setWallStartPoint(point);
+        setWallPreviewEndPoint(point);
+      } else {
+        // Second click - create wall
+        const startPoint = wallPlacement.startPoint;
+        if (!startPoint) return;
+
+        // Calculate wall length
+        const dx = point.x - startPoint.x;
+        const dy = point.y - startPoint.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        // Only create wall if it has meaningful length
+        if (length < 0.1) {
+          resetWallPlacement();
+          return;
+        }
+
+        // Create the wall element
+        const wallId = crypto.randomUUID();
+        const thickness = DEFAULT_WALL_THICKNESS;
+        const height = DEFAULT_WALL_HEIGHT;
+
+        // Calculate wall profile (rectangle in local coordinates)
+        const halfThick = thickness / 2;
+        const wallProfile: Point2D[] = [
+          { x: 0, y: -halfThick },
+          { x: length, y: -halfThick },
+          { x: length, y: halfThick },
+          { x: 0, y: halfThick },
+        ];
+
+        addElement({
+          id: wallId,
+          type: 'wall',
+          name: `Wall ${wallId.slice(0, 4)}`,
+          geometry: {
+            profile: wallProfile,
+            height: height,
+            direction: { x: 0, y: 0, z: 1 }, // Z-up extrusion
+          },
+          placement: {
+            position: { x: startPoint.x, y: startPoint.y, z: 0 },
+            rotation: { x: 0, y: 0, z: 0, w: 1 },
+          },
+          properties: [],
+          parentId: activeStoreyId,
+          wallData: {
+            startPoint: { x: startPoint.x, y: startPoint.y },
+            endPoint: { x: point.x, y: point.y },
+            height: height,
+            thickness: thickness,
+            openings: [],
+          },
+        });
+
+        // Continue drawing - use end point as new start point for chain drawing
+        setWallStartPoint(point);
+        setWallPreviewEndPoint(point);
       }
     },
-    [activeTool, clearSelection]
+    [wallPlacement, setWallStartPoint, setWallPreviewEndPoint, resetWallPlacement, addElement, activeStoreyId]
   );
 
-  // World to screen coordinates
-  const worldToScreen = useCallback(
-    (x: number, y: number) => ({
-      x: x * cad2dZoom + cad2dPanX + dimensions.width / 2,
-      y: -y * cad2dZoom + cad2dPanY + dimensions.height / 2, // Flip Y for CAD convention
-    }),
-    [cad2dZoom, cad2dPanX, cad2dPanY, dimensions]
+  // Handle stage click for tool operations
+  const handleStageClick = useCallback(
+    (e: KonvaEventObject<MouseEvent>) => {
+      // Only handle left clicks on the stage itself
+      if (e.evt.button !== 0) return;
+      if (e.target !== stageRef.current) return;
+
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      // Convert to world coordinates with snapping
+      const worldPos = screenToWorld(pointer.x, pointer.y);
+      const snappedPos = applyGridSnap(worldPos);
+
+      // Handle different tools
+      switch (activeTool) {
+        case 'select':
+          clearSelection();
+          break;
+
+        case 'wall':
+          handleWallClick(snappedPos);
+          break;
+
+        // Future tools will be added here
+        default:
+          break;
+      }
+    },
+    [activeTool, clearSelection, screenToWorld, applyGridSnap, handleWallClick]
   );
 
   // Render grid
@@ -640,6 +809,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   };
 
   // Render a counter as thick polyline with offset
+  // Uses the same offsetPath algorithm as the 3D rendering for consistency
   const renderCounter = (element: BimElement) => {
     if (!element.counterData) return null;
 
@@ -648,74 +818,20 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
 
     const isSelected = selectedIds.has(element.id);
 
-    // Build closed polygon from path + offset
-    // Front line is the path, back line is offset by depth
-    const frontPoints: { x: number; y: number }[] = [];
-    const backPoints: { x: number; y: number }[] = [];
+    // Use the same offset algorithm as 3D rendering (proper miter joins)
+    const backPath = offsetPath(path, depth);
+    const polygon = createCounterPolygon(path, backPath);
 
-    for (let i = 0; i < path.length; i++) {
-      const curr = path[i]!;
-      frontPoints.push(curr);
+    if (polygon.length < 3) return null;
 
-      // Calculate offset direction (perpendicular to path segment)
-      let nx = 0, ny = 0;
-
-      if (i === 0 && path.length > 1) {
-        // First point - use direction to next point
-        const next = path[i + 1]!;
-        const dx = next.x - curr.x;
-        const dy = next.y - curr.y;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        if (len > 0) {
-          nx = -dy / len;
-          ny = dx / len;
-        }
-      } else if (i === path.length - 1 && path.length > 1) {
-        // Last point - use direction from previous point
-        const prev = path[i - 1]!;
-        const dx = curr.x - prev.x;
-        const dy = curr.y - prev.y;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        if (len > 0) {
-          nx = -dy / len;
-          ny = dx / len;
-        }
-      } else if (path.length > 2) {
-        // Middle point - average of adjacent segments
-        const prev = path[i - 1]!;
-        const next = path[i + 1]!;
-        const dx1 = curr.x - prev.x;
-        const dy1 = curr.y - prev.y;
-        const dx2 = next.x - curr.x;
-        const dy2 = next.y - curr.y;
-        const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-        const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-        if (len1 > 0 && len2 > 0) {
-          nx = (-dy1 / len1 - dy2 / len2) / 2;
-          ny = (dx1 / len1 + dx2 / len2) / 2;
-          const nlen = Math.sqrt(nx * nx + ny * ny);
-          if (nlen > 0) {
-            nx /= nlen;
-            ny /= nlen;
-          }
-        }
-      }
-
-      backPoints.push({
-        x: curr.x + nx * depth,
-        y: curr.y + ny * depth,
-      });
-    }
-
-    // Create closed polygon: front + reversed back
-    const allPoints = [...frontPoints, ...backPoints.reverse()];
-    const screenPoints = allPoints.flatMap((p) => {
+    // Convert polygon to screen coordinates
+    const screenPoints = polygon.flatMap((p) => {
       const screen = worldToScreen(p.x, p.y);
       return [screen.x, screen.y];
     });
 
-    // Front line for emphasis
-    const frontScreenPoints = frontPoints.flatMap((p) => {
+    // Front line for emphasis (customer side)
+    const frontScreenPoints = path.flatMap((p) => {
       const screen = worldToScreen(p.x, p.y);
       return [screen.x, screen.y];
     });
@@ -970,31 +1086,33 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           strokeWidth={1.5}
         />
 
-        {/* Dimension text with background */}
-        <Rect
-          x={textPos.x - 20}
-          y={textPos.y - 8}
-          width={40}
-          height={16}
-          fill={DIMENSION_COLORS.background}
-          cornerRadius={2}
-          rotation={angleDeg}
-          offsetX={-20}
-          offsetY={-8}
-        />
-        <Text
+        {/* Dimension text with background - wrapped in Group for correct rotation */}
+        <Group
           x={textPos.x}
           y={textPos.y}
-          text={displayText}
-          fontSize={dimensionSettings.fontSize2D}
-          fill={DIMENSION_COLORS.primary}
           rotation={angleDeg}
-          align="center"
-          verticalAlign="middle"
-          offsetX={18}
-          offsetY={5}
-          fontFamily="Arial, sans-serif"
-        />
+        >
+          <Rect
+            x={-20}
+            y={-8}
+            width={40}
+            height={16}
+            fill={DIMENSION_COLORS.background}
+            cornerRadius={2}
+          />
+          <Text
+            x={-20}
+            y={-8}
+            width={40}
+            height={16}
+            text={displayText}
+            fontSize={dimensionSettings.fontSize2D}
+            fill={DIMENSION_COLORS.primary}
+            align="center"
+            verticalAlign="middle"
+            fontFamily="Arial, sans-serif"
+          />
+        </Group>
       </Group>
     );
   };
@@ -1163,6 +1281,150 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     );
   };
 
+  // Render wall preview during placement
+  const renderWallPreview = () => {
+    if (activeTool !== 'wall' || !wallPlacement.isPlacing) return null;
+    if (!wallPlacement.startPoint || !wallPlacement.previewEndPoint) return null;
+
+    const { startPoint, previewEndPoint } = wallPlacement;
+    const thickness = DEFAULT_WALL_THICKNESS;
+
+    // Calculate wall direction and length
+    const dx = previewEndPoint.x - startPoint.x;
+    const dy = previewEndPoint.y - startPoint.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    if (length < 0.01) return null;
+
+    // Normal direction (perpendicular to wall)
+    const nx = -dy / length;
+    const ny = dx / length;
+    const halfThick = thickness / 2;
+
+    // Four corners of the preview wall
+    const corners = [
+      { x: startPoint.x + nx * halfThick, y: startPoint.y + ny * halfThick },
+      { x: previewEndPoint.x + nx * halfThick, y: previewEndPoint.y + ny * halfThick },
+      { x: previewEndPoint.x - nx * halfThick, y: previewEndPoint.y - ny * halfThick },
+      { x: startPoint.x - nx * halfThick, y: startPoint.y - ny * halfThick },
+    ];
+
+    // Convert to screen coordinates
+    const screenCorners = corners.map((c) => worldToScreen(c.x, c.y));
+    const points = screenCorners.flatMap((c) => [c.x, c.y]);
+
+    // Center line
+    const screenStart = worldToScreen(startPoint.x, startPoint.y);
+    const screenEnd = worldToScreen(previewEndPoint.x, previewEndPoint.y);
+
+    // Dimension text position (midpoint with offset)
+    const midX = (startPoint.x + previewEndPoint.x) / 2;
+    const midY = (startPoint.y + previewEndPoint.y) / 2;
+    const textOffset = 0.4;
+    const textPos = worldToScreen(midX + nx * textOffset, midY + ny * textOffset);
+
+    // Calculate text rotation for readability
+    let angleDeg = -Math.atan2(dy, dx) * (180 / Math.PI);
+    if (angleDeg > 90) angleDeg -= 180;
+    if (angleDeg < -90) angleDeg += 180;
+
+    return (
+      <Group>
+        {/* Preview wall fill - semi-transparent */}
+        <Line
+          points={points}
+          closed
+          fill="rgba(0, 102, 255, 0.2)"
+          stroke="#0066ff"
+          strokeWidth={2}
+          dash={[8, 4]}
+        />
+        {/* Center line */}
+        <Line
+          points={[screenStart.x, screenStart.y, screenEnd.x, screenEnd.y]}
+          stroke="#0066ff"
+          strokeWidth={1}
+          dash={[4, 4]}
+        />
+        {/* Start point indicator */}
+        <Circle
+          x={screenStart.x}
+          y={screenStart.y}
+          radius={5}
+          fill="#0066ff"
+          stroke="#ffffff"
+          strokeWidth={1}
+        />
+        {/* End point indicator */}
+        <Circle
+          x={screenEnd.x}
+          y={screenEnd.y}
+          radius={4}
+          fill="#ffffff"
+          stroke="#0066ff"
+          strokeWidth={2}
+        />
+        {/* Length dimension text */}
+        <Group x={textPos.x} y={textPos.y} rotation={angleDeg}>
+          <Rect
+            x={-25}
+            y={-10}
+            width={50}
+            height={20}
+            fill="rgba(255, 255, 255, 0.9)"
+            cornerRadius={3}
+          />
+          <Text
+            x={-25}
+            y={-10}
+            width={50}
+            height={20}
+            text={`${length.toFixed(2)}m`}
+            fontSize={12}
+            fill="#0066ff"
+            fontStyle="bold"
+            align="center"
+            verticalAlign="middle"
+          />
+        </Group>
+      </Group>
+    );
+  };
+
+  // Render cursor crosshair for drawing tools
+  const renderCursor = () => {
+    if (activeTool === 'select' || activeTool === 'pan' || activeTool === 'orbit') return null;
+    if (!cursorWorldPos) return null;
+
+    const screenPos = worldToScreen(cursorWorldPos.x, cursorWorldPos.y);
+    const crosshairSize = 10;
+
+    return (
+      <Group>
+        {/* Vertical line */}
+        <Line
+          points={[screenPos.x, screenPos.y - crosshairSize, screenPos.x, screenPos.y + crosshairSize]}
+          stroke="#ff6600"
+          strokeWidth={1}
+        />
+        {/* Horizontal line */}
+        <Line
+          points={[screenPos.x - crosshairSize, screenPos.y, screenPos.x + crosshairSize, screenPos.y]}
+          stroke="#ff6600"
+          strokeWidth={1}
+        />
+        {/* Coordinate display */}
+        <Text
+          x={screenPos.x + 12}
+          y={screenPos.y + 12}
+          text={`${cursorWorldPos.x.toFixed(2)}, ${cursorWorldPos.y.toFixed(2)}`}
+          fontSize={10}
+          fill="#666666"
+        />
+      </Group>
+    );
+  };
+
   // Render scale indicator
   const renderScaleIndicator = () => {
     const scaleBarLength = 100; // pixels
@@ -1199,6 +1461,12 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
 
         {/* Elements Layer */}
         <Layer>{renderElements()}</Layer>
+
+        {/* Preview Layer - for active tool previews */}
+        <Layer listening={false}>
+          {renderWallPreview()}
+          {renderCursor()}
+        </Layer>
 
         {/* Dimensions Layer */}
         <Layer listening={false}>{renderDimensions()}</Layer>

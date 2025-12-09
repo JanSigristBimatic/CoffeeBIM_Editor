@@ -2,19 +2,13 @@ import { useCallback } from 'react';
 import type { BimElement, SpaceType, GastroSpaceCategory } from '@/types/bim';
 import { GASTRO_SPACE_LABELS, GASTRO_SPACE_COLORS } from '@/types/bim';
 import { useElementStore } from '@/store';
-import { updateSpaceProperties, renameSpace, getSpaceVolume } from '@/bim/elements';
 import {
-  Armchair,
-  Coffee,
-  ChefHat,
-  Package,
-  Bath,
-  Briefcase,
-  DoorOpen,
-  Sun,
-  Settings,
-  HelpCircle,
-} from 'lucide-react';
+  updateSpaceProperties,
+  renameSpace,
+  getSpaceVolume,
+  getSpaceNetVolume,
+  updateSpaceNetFloorArea,
+} from '@/bim/elements';
 
 interface SpacePropertiesProps {
   element: BimElement;
@@ -26,17 +20,17 @@ const SPACE_TYPES: { value: SpaceType; label: string }[] = [
   { value: 'NOTDEFINED', label: 'Nicht definiert' },
 ];
 
-const GASTRO_CATEGORIES: { value: GastroSpaceCategory; label: string; icon: React.ReactNode }[] = [
-  { value: 'GASTRAUM', label: GASTRO_SPACE_LABELS.GASTRAUM, icon: <Armchair className="w-4 h-4" /> },
-  { value: 'BAR', label: GASTRO_SPACE_LABELS.BAR, icon: <Coffee className="w-4 h-4" /> },
-  { value: 'KUECHE', label: GASTRO_SPACE_LABELS.KUECHE, icon: <ChefHat className="w-4 h-4" /> },
-  { value: 'LAGER', label: GASTRO_SPACE_LABELS.LAGER, icon: <Package className="w-4 h-4" /> },
-  { value: 'SANITAER', label: GASTRO_SPACE_LABELS.SANITAER, icon: <Bath className="w-4 h-4" /> },
-  { value: 'PERSONAL', label: GASTRO_SPACE_LABELS.PERSONAL, icon: <Briefcase className="w-4 h-4" /> },
-  { value: 'EINGANG', label: GASTRO_SPACE_LABELS.EINGANG, icon: <DoorOpen className="w-4 h-4" /> },
-  { value: 'TERRASSE', label: GASTRO_SPACE_LABELS.TERRASSE, icon: <Sun className="w-4 h-4" /> },
-  { value: 'TECHNIK', label: GASTRO_SPACE_LABELS.TECHNIK, icon: <Settings className="w-4 h-4" /> },
-  { value: 'SONSTIGES', label: GASTRO_SPACE_LABELS.SONSTIGES, icon: <HelpCircle className="w-4 h-4" /> },
+const GASTRO_CATEGORIES: { value: GastroSpaceCategory; label: string }[] = [
+  { value: 'GASTRAUM', label: GASTRO_SPACE_LABELS.GASTRAUM },
+  { value: 'BAR', label: GASTRO_SPACE_LABELS.BAR },
+  { value: 'KUECHE', label: GASTRO_SPACE_LABELS.KUECHE },
+  { value: 'LAGER', label: GASTRO_SPACE_LABELS.LAGER },
+  { value: 'SANITAER', label: GASTRO_SPACE_LABELS.SANITAER },
+  { value: 'PERSONAL', label: GASTRO_SPACE_LABELS.PERSONAL },
+  { value: 'EINGANG', label: GASTRO_SPACE_LABELS.EINGANG },
+  { value: 'TERRASSE', label: GASTRO_SPACE_LABELS.TERRASSE },
+  { value: 'TECHNIK', label: GASTRO_SPACE_LABELS.TECHNIK },
+  { value: 'SONSTIGES', label: GASTRO_SPACE_LABELS.SONSTIGES },
 ];
 
 /**
@@ -44,7 +38,7 @@ const GASTRO_CATEGORIES: { value: GastroSpaceCategory; label: string; icon: Reac
  * Shows room area, perimeter, volume and allows editing type
  */
 export function SpaceProperties({ element }: SpacePropertiesProps) {
-  const { updateElement } = useElementStore();
+  const { updateElement, elements } = useElementStore();
 
   const spaceData = element.spaceData;
 
@@ -92,11 +86,23 @@ export function SpaceProperties({ element }: SpacePropertiesProps) {
     [spaceData, element, updateElement]
   );
 
+  // Recalculate net floor area
+  const handleRecalculateNetArea = useCallback(() => {
+    if (!spaceData) return;
+
+    const allElements = Object.values(elements);
+    const updated = updateSpaceNetFloorArea(element, allElements);
+    updateElement(element.id, updated);
+  }, [spaceData, element, elements, updateElement]);
+
   if (!spaceData) {
     return <div className="text-sm text-muted-foreground">Raum-Daten nicht verfügbar</div>;
   }
 
   const volume = getSpaceVolume(element);
+  const netVolume = getSpaceNetVolume(element);
+  const netArea = spaceData.netFloorArea;
+  const hasNetArea = netArea !== undefined;
 
   return (
     <div className="space-y-4">
@@ -136,7 +142,7 @@ export function SpaceProperties({ element }: SpacePropertiesProps) {
               <button
                 key={cat.value}
                 onClick={() => handleGastroCategoryChange(cat.value)}
-                className={`flex items-center gap-1.5 px-2 py-1.5 text-xs rounded border transition-colors ${
+                className={`px-2 py-1.5 text-xs rounded border transition-colors truncate ${
                   isSelected
                     ? 'border-primary ring-1 ring-primary'
                     : 'border-border hover:bg-accent'
@@ -146,8 +152,7 @@ export function SpaceProperties({ element }: SpacePropertiesProps) {
                   color: isSelected ? '#000' : undefined,
                 }}
               >
-                {cat.icon}
-                <span className="truncate">{cat.label}</span>
+                {cat.label}
               </button>
             );
           })}
@@ -176,22 +181,62 @@ export function SpaceProperties({ element }: SpacePropertiesProps) {
 
       {/* Calculated Values - Key Metrics */}
       <div className="p-3 bg-muted rounded-md space-y-2">
+        {/* Gross Area */}
         <div className="flex justify-between items-center">
-          <span className="text-xs text-muted-foreground">Fläche</span>
+          <span className="text-xs text-muted-foreground">Bruttofläche</span>
           <span className="text-sm font-semibold font-mono">{spaceData.area.toFixed(2)} m²</span>
         </div>
+
+        {/* Net Area */}
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-muted-foreground">Nettofläche</span>
+          {hasNetArea ? (
+            <span className="text-sm font-semibold font-mono text-green-600">
+              {netArea.toFixed(2)} m²
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground italic">nicht berechnet</span>
+          )}
+        </div>
+
+        {/* Deducted area info */}
+        {hasNetArea && (
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-muted-foreground">Abzug (Stützen, Theken)</span>
+            <span className="font-mono text-orange-600">
+              -{(spaceData.area - netArea).toFixed(2)} m²
+            </span>
+          </div>
+        )}
+
+        <div className="border-t my-2" />
+
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground">Umfang</span>
           <span className="text-sm font-medium font-mono">{spaceData.perimeter.toFixed(2)} m</span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-xs text-muted-foreground">Volumen</span>
+          <span className="text-xs text-muted-foreground">Volumen (brutto)</span>
           <span className="text-sm font-medium font-mono">{volume.toFixed(2)} m³</span>
         </div>
+        {hasNetArea && (
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-muted-foreground">Volumen (netto)</span>
+            <span className="text-sm font-medium font-mono text-green-600">{netVolume.toFixed(2)} m³</span>
+          </div>
+        )}
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground">Höhe</span>
           <span className="text-sm font-medium font-mono">{element.geometry.height.toFixed(2)} m</span>
         </div>
+
+        {/* Recalculate button */}
+        <button
+          onClick={handleRecalculateNetArea}
+          className="w-full mt-2 px-2 py-1.5 text-xs rounded border border-border bg-background hover:bg-accent transition-colors"
+        >
+          Nettofläche neu berechnen
+        </button>
       </div>
 
       {/* Bounding Walls Info */}

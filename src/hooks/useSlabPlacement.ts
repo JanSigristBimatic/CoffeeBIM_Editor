@@ -152,6 +152,23 @@ export function useSlabPlacement() {
   );
 
   /**
+   * Handle right click (context menu) - close polygon if enough points
+   */
+  const handleContextMenu = useCallback(
+    (event: ThreeEvent<MouseEvent>) => {
+      if (activeTool !== 'slab') return;
+      if (slabPlacement.points.length < 3) return;
+
+      event.stopPropagation();
+      // Prevent browser context menu
+      event.nativeEvent.preventDefault();
+      clearDistanceInput();
+      completeSlab();
+    },
+    [activeTool, slabPlacement.points.length, completeSlab, clearDistanceInput]
+  );
+
+  /**
    * Handle pointer move - update preview
    * Also updates cursor position for snap preview before first point
    * Updates direction for distance input
@@ -264,6 +281,7 @@ export function useSlabPlacement() {
     handlePointerDown,
     handlePointerMove,
     handleDoubleClick,
+    handleContextMenu,
     cancelPlacement,
     isDrawing: slabPlacement.isDrawing,
     points: slabPlacement.points,

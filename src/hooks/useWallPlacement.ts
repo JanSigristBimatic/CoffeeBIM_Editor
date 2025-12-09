@@ -189,6 +189,23 @@ export function useWallPlacement() {
   );
 
   /**
+   * Handle right click (context menu) - finish wall chain
+   */
+  const handleContextMenu = useCallback(
+    (event: ThreeEvent<MouseEvent>) => {
+      if (activeTool !== 'wall') return;
+      if (!wallPlacement.startPoint) return;
+
+      event.stopPropagation();
+      // Prevent browser context menu
+      event.nativeEvent.preventDefault();
+      clearDistanceInput();
+      resetWallPlacement();
+    },
+    [activeTool, wallPlacement.startPoint, resetWallPlacement, clearDistanceInput]
+  );
+
+  /**
    * Cancel current wall placement
    */
   const cancelPlacement = useCallback(() => {
@@ -258,6 +275,7 @@ export function useWallPlacement() {
   return {
     handlePointerDown,
     handlePointerMove,
+    handleContextMenu,
     cancelPlacement,
     isPlacing: wallPlacement.startPoint !== null,
     startPoint: wallPlacement.startPoint,

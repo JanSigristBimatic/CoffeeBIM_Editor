@@ -104,7 +104,11 @@ export function GroundPlane() {
   };
 
   const handleContextMenu = (event: ThreeEvent<MouseEvent>) => {
-    if (activeTool === 'counter') {
+    if (activeTool === 'wall') {
+      wallPlacement.handleContextMenu(event);
+    } else if (activeTool === 'slab') {
+      slabPlacement.handleContextMenu(event);
+    } else if (activeTool === 'counter') {
       counterPlacement.handleContextMenu(event);
     } else if (activeTool === 'measure') {
       measurePlacement.handleContextMenu(event);

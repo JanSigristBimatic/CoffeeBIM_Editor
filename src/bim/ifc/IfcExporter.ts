@@ -1342,7 +1342,7 @@ export class IfcExporter {
   private createSpaceQuantities(space: BimElement, spaceIfcId: number): void {
     if (!space.spaceData) return;
 
-    const { area, perimeter } = space.spaceData;
+    const { area, perimeter, netFloorArea } = space.spaceData;
     const volume = area * space.geometry.height;
 
     const quantities: number[] = [];
@@ -1358,6 +1358,20 @@ export class IfcExporter {
       AreaValue: { type: 4, value: area },
     });
     quantities.push(areaId);
+
+    // IfcQuantityArea - NetFloorArea (if calculated)
+    if (netFloorArea !== undefined) {
+      const netAreaId = this.getNextId();
+      this.ifcApi.WriteLine(this.modelId, {
+        expressID: netAreaId,
+        type: WebIFC.IFCQUANTITYAREA,
+        Name: { type: 1, value: 'NetFloorArea' },
+        Description: { type: 1, value: 'Nettofläche ohne Stützen und Theken' },
+        Unit: null,
+        AreaValue: { type: 4, value: netFloorArea },
+      });
+      quantities.push(netAreaId);
+    }
 
     // IfcQuantityLength - GrossPerimeter
     const perimId = this.getNextId();
@@ -1382,6 +1396,21 @@ export class IfcExporter {
       VolumeValue: { type: 4, value: volume },
     });
     quantities.push(volId);
+
+    // IfcQuantityVolume - NetVolume (if NetFloorArea calculated)
+    if (netFloorArea !== undefined) {
+      const netVolume = netFloorArea * space.geometry.height;
+      const netVolId = this.getNextId();
+      this.ifcApi.WriteLine(this.modelId, {
+        expressID: netVolId,
+        type: WebIFC.IFCQUANTITYVOLUME,
+        Name: { type: 1, value: 'NetVolume' },
+        Description: { type: 1, value: 'Nettovolumen ohne Stützen und Theken' },
+        Unit: null,
+        VolumeValue: { type: 4, value: netVolume },
+      });
+      quantities.push(netVolId);
+    }
 
     // IfcQuantityLength - Height
     const heightId = this.getNextId();
