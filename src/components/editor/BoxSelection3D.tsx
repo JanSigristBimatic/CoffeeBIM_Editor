@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
-import { Box3, Frustum, Matrix4, Vector2, Vector3 } from 'three';
+import { Box3, Vector3 } from 'three';
 import { useSelectionStore, useToolStore, useElementStore, useProjectStore } from '@/store';
 import type { BimElement } from '@/types/bim';
 
@@ -9,14 +9,11 @@ import type { BimElement } from '@/types/bim';
  * Renders an HTML overlay for box selection and performs frustum-based intersection
  */
 export function BoxSelection3D() {
-  const { camera, gl, scene } = useThree();
+  const { camera, gl } = useThree();
   const {
     selectedIds,
     selectMultiple,
     addToSelection,
-    removeFromSelection,
-    clearSelection,
-    boxSelect,
     startBoxSelect,
     updateBoxSelect,
     finishBoxSelect,
@@ -25,7 +22,6 @@ export function BoxSelection3D() {
   const { getElementsByStorey } = useElementStore();
   const { activeStoreyId } = useProjectStore();
 
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const [screenStart, setScreenStart] = useState<{ x: number; y: number } | null>(null);
   const [screenCurrent, setScreenCurrent] = useState<{ x: number; y: number } | null>(null);
   const modifiersRef = useRef({ shift: false, ctrl: false });
@@ -73,15 +69,16 @@ export function BoxSelection3D() {
     }
 
     if (element.type === 'space' && element.spaceData) {
-      const { outline, height } = element.spaceData;
-      if (outline.length === 0) return null;
+      const { boundaryPolygon, netHeight } = element.spaceData;
+      if (boundaryPolygon.length === 0) return null;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const pt of outline) {
+      for (const pt of boundaryPolygon) {
         minX = Math.min(minX, pt.x);
         maxX = Math.max(maxX, pt.x);
         minY = Math.min(minY, pt.y);
         maxY = Math.max(maxY, pt.y);
       }
+      const height = netHeight ?? 3; // Default space height if not set
       box.set(new Vector3(minX, minY, 0), new Vector3(maxX, maxY, height));
       return box;
     }
@@ -111,12 +108,12 @@ export function BoxSelection3D() {
     }
 
     if (element.type === 'stair' && element.stairData) {
-      const { width, height } = element.stairData;
+      const { width, totalRise, steps } = element.stairData;
       const pos = element.placement.position;
-      const runLength = element.stairData.runLength ?? 3;
+      const runLength = steps?.runLength ?? 3;
       box.set(
         new Vector3(pos.x, pos.y, pos.z),
-        new Vector3(pos.x + width, pos.y + runLength, pos.z + height)
+        new Vector3(pos.x + width, pos.y + runLength, pos.z + totalRise)
       );
       return box;
     }
@@ -124,36 +121,13 @@ export function BoxSelection3D() {
     return null;
   }, []);
 
-  // Create frustum from screen rectangle
-  const getFrustumFromScreenRect = useCallback(
-    (x1: number, y1: number, x2: number, y2: number): Frustum => {
-      const rect = gl.domElement.getBoundingClientRect();
-
-      // Normalize to -1 to 1
-      const ndcX1 = ((Math.min(x1, x2) - rect.left) / rect.width) * 2 - 1;
-      const ndcY1 = -((Math.min(y1, y2) - rect.top) / rect.height) * 2 + 1;
-      const ndcX2 = ((Math.max(x1, x2) - rect.left) / rect.width) * 2 - 1;
-      const ndcY2 = -((Math.max(y1, y2) - rect.top) / rect.height) * 2 + 1;
-
-      // For orthographic camera, we can use a simple box test
-      // For perspective, we'd need proper frustum planes
-      const frustum = new Frustum();
-      const projectionMatrix = camera.projectionMatrix.clone();
-      const viewMatrix = camera.matrixWorldInverse.clone();
-      frustum.setFromProjectionMatrix(new Matrix4().multiplyMatrices(projectionMatrix, viewMatrix));
-
-      return frustum;
-    },
-    [camera, gl]
-  );
-
-  // Check if element is within screen rectangle
+  // Check if element is within screen rectangle (projected center test)
   const isElementInScreenRect = useCallback(
     (element: BimElement, x1: number, y1: number, x2: number, y2: number): boolean => {
       const box = getElementBoundingBox(element);
       if (!box) return false;
 
-      // Get center and corners of bounding box
+      // Get center of bounding box
       const center = new Vector3();
       box.getCenter(center);
 
@@ -180,9 +154,6 @@ export function BoxSelection3D() {
       if (activeTool !== 'select') return;
       if (e.button !== 0) return; // Left click only
 
-      // Check if clicking on empty space (not on an element)
-      // We start box selection on pointerMissed, which is handled by Canvas3D
-
       setScreenStart({ x: e.clientX, y: e.clientY });
       setScreenCurrent({ x: e.clientX, y: e.clientY });
       modifiersRef.current = { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
@@ -202,7 +173,7 @@ export function BoxSelection3D() {
   );
 
   const handleMouseUp = useCallback(
-    (e: MouseEvent) => {
+    () => {
       if (!screenStart || !screenCurrent || activeTool !== 'select') {
         setScreenStart(null);
         setScreenCurrent(null);
