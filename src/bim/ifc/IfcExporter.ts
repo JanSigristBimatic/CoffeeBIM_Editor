@@ -1,6 +1,7 @@
 import * as WebIFC from 'web-ifc';
 import type { BimElement, ProjectInfo, SiteInfo, BuildingInfo, StoreyInfo } from '@/types/bim';
 import { offsetPath, createCounterPolygon } from '@/lib/geometry/pathOffset';
+import { calculateWallGeometry, getPointOnWall } from '@/lib/geometry';
 
 /**
  * IFC Exporter using web-ifc
@@ -23,6 +24,8 @@ export class IfcExporter {
   private columnIds: Map<string, number> = new Map();
   private counterIds: Map<string, number> = new Map();
   private furnitureIds: Map<string, number> = new Map();
+  private spaceIds: Map<string, number> = new Map();
+  private stairIds: Map<string, number> = new Map();
 
   constructor() {
     this.ifcApi = new WebIFC.IfcAPI();
@@ -60,6 +63,8 @@ export class IfcExporter {
     this.columnIds.clear();
     this.counterIds.clear();
     this.furnitureIds.clear();
+    this.spaceIds.clear();
+    this.stairIds.clear();
 
     // Create IFC hierarchy
     this.createOwnerHistory();
@@ -117,6 +122,18 @@ export class IfcExporter {
     const furniture = elements.filter((e) => e.type === 'furniture');
     for (const item of furniture) {
       this.createFurniture(item, storeys);
+    }
+
+    // Export spaces (rooms)
+    const spaces = elements.filter((e) => e.type === 'space');
+    for (const space of spaces) {
+      this.createSpace(space, storeys);
+    }
+
+    // Export stairs
+    const stairs = elements.filter((e) => e.type === 'stair');
+    for (const stair of stairs) {
+      this.createStair(stair, storeys);
     }
 
     // Get IFC data
@@ -445,18 +462,15 @@ export class IfcExporter {
     const storey = storeys.find((s) => s.id === wall.parentId);
     const storeyIfcId = storey ? this.storeyIds.get(storey.id) : null;
 
-    // Calculate wall direction and length
-    const dx = endPoint.x - startPoint.x;
-    const dy = endPoint.y - startPoint.y;
-    const wallLength = Math.sqrt(dx * dx + dy * dy);
-    const angle = Math.atan2(dy, dx);
+    // Calculate wall geometry using centralized utility
+    const wallGeo = calculateWallGeometry(startPoint, endPoint);
 
     // Create placement at wall start
-    const placementId = this.createLocalPlacement(null, startPoint.x, startPoint.y, storey?.elevation ?? 0, angle);
+    const placementId = this.createLocalPlacement(null, startPoint.x, startPoint.y, storey?.elevation ?? 0, wallGeo.angle);
 
     // Create wall profile (rectangle in local XY plane)
-    // Offset by wallLength/2 so profile starts at origin instead of being centered
-    const profileId = this.createRectangleProfile(wallLength, thickness, wallLength / 2, 0);
+    // Offset by wallGeo.length/2 so profile starts at origin instead of being centered
+    const profileId = this.createRectangleProfile(wallGeo.length, thickness, wallGeo.length / 2, 0);
 
     // Create extruded solid
     const solidId = this.createExtrudedSolid(profileId, height);
@@ -494,10 +508,149 @@ export class IfcExporter {
     // Create property sets
     this.createPropertySets(wall, wallIfcId);
 
+    // Create quantity sets for wall dimensions
+    this.createWallQuantities(wall, wallIfcId);
+
     // Assign to storey
     if (storeyIfcId) {
       this.createContainedInSpatialStructure(wallIfcId, storeyIfcId);
     }
+  }
+
+  /**
+   * Create quantity sets for wall (Qto_WallBaseQuantities)
+   * Exports: Length, Height, Width, GrossSideArea, NetSideArea, GrossVolume, NetVolume
+   */
+  private createWallQuantities(wall: BimElement, wallIfcId: number): void {
+    if (!wall.wallData) return;
+
+    const { startPoint, endPoint, thickness, height } = wall.wallData;
+
+    // Calculate wall length
+    const dx = endPoint.x - startPoint.x;
+    const dy = endPoint.y - startPoint.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    // Calculate quantities
+    const grossSideArea = length * height; // m²
+    const grossVolume = length * height * thickness; // m³
+
+    // For net values, we would need to subtract openings
+    // For now, net = gross (openings not calculated)
+    const netSideArea = grossSideArea;
+    const netVolume = grossVolume;
+
+    const quantities: number[] = [];
+
+    // IfcQuantityLength - Length
+    const lengthId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: lengthId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'Length' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: length },
+    });
+    quantities.push(lengthId);
+
+    // IfcQuantityLength - Height
+    const heightId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: heightId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'Height' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: height },
+    });
+    quantities.push(heightId);
+
+    // IfcQuantityLength - Width (thickness)
+    const widthId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: widthId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'Width' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: thickness },
+    });
+    quantities.push(widthId);
+
+    // IfcQuantityArea - GrossSideArea
+    const grossAreaId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: grossAreaId,
+      type: WebIFC.IFCQUANTITYAREA,
+      Name: { type: 1, value: 'GrossSideArea' },
+      Description: null,
+      Unit: null,
+      AreaValue: { type: 4, value: grossSideArea },
+    });
+    quantities.push(grossAreaId);
+
+    // IfcQuantityArea - NetSideArea
+    const netAreaId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: netAreaId,
+      type: WebIFC.IFCQUANTITYAREA,
+      Name: { type: 1, value: 'NetSideArea' },
+      Description: null,
+      Unit: null,
+      AreaValue: { type: 4, value: netSideArea },
+    });
+    quantities.push(netAreaId);
+
+    // IfcQuantityVolume - GrossVolume
+    const grossVolId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: grossVolId,
+      type: WebIFC.IFCQUANTITYVOLUME,
+      Name: { type: 1, value: 'GrossVolume' },
+      Description: null,
+      Unit: null,
+      VolumeValue: { type: 4, value: grossVolume },
+    });
+    quantities.push(grossVolId);
+
+    // IfcQuantityVolume - NetVolume
+    const netVolId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: netVolId,
+      type: WebIFC.IFCQUANTITYVOLUME,
+      Name: { type: 1, value: 'NetVolume' },
+      Description: null,
+      Unit: null,
+      VolumeValue: { type: 4, value: netVolume },
+    });
+    quantities.push(netVolId);
+
+    // Create IfcElementQuantity (Qto_WallBaseQuantities)
+    const qtoId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: qtoId,
+      type: WebIFC.IFCELEMENTQUANTITY,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: { type: 1, value: 'Qto_WallBaseQuantities' },
+      Description: null,
+      MethodOfMeasurement: null,
+      Quantities: quantities.map((id) => ({ type: 5, value: id })),
+    });
+
+    // Create IfcRelDefinesByProperties to link to wall
+    const relId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: relId,
+      type: WebIFC.IFCRELDEFINESBYPROPERTIES,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: null,
+      Description: null,
+      RelatedObjects: [{ type: 5, value: wallIfcId }],
+      RelatingPropertyDefinition: { type: 5, value: qtoId },
+    });
   }
 
   private createDoor(door: BimElement, allElements: BimElement[], storeys: StoreyInfo[]): void {
@@ -516,28 +669,21 @@ export class IfcExporter {
     const storey = storeys.find((s) => s.id === door.parentId);
     const storeyIfcId = storey ? this.storeyIds.get(storey.id) : null;
 
-    // Calculate door position in wall local coordinates
+    // Calculate door position using centralized utilities
     const { startPoint, endPoint, thickness } = hostWall.wallData;
-    const dx = endPoint.x - startPoint.x;
-    const dy = endPoint.y - startPoint.y;
-    const wallLength = Math.sqrt(dx * dx + dy * dy);
-    const wallAngle = Math.atan2(dy, dx);
+    const wallGeo = calculateWallGeometry(startPoint, endPoint);
 
-    // Door center position along wall
-    const doorCenterDistance = positionOnWall * wallLength;
-
-    // Door world position
-    const doorX = startPoint.x + (dx / wallLength) * doorCenterDistance;
-    const doorY = startPoint.y + (dy / wallLength) * doorCenterDistance;
+    // Door world position using getPointOnWall utility
+    const doorPos = getPointOnWall(startPoint, endPoint, positionOnWall);
 
     // Create opening in wall (include sillHeight for vertical offset)
     const baseElevation = storey?.elevation ?? 0;
     const openingPlacementId = this.createLocalPlacement(
       null,
-      doorX,
-      doorY,
+      doorPos.x,
+      doorPos.y,
       baseElevation + sillHeight,
-      wallAngle
+      wallGeo.angle
     );
 
     // Opening profile (rectangular hole)
@@ -588,10 +734,10 @@ export class IfcExporter {
     // Create door element
     const doorPlacementId = this.createLocalPlacement(
       null,
-      doorX,
-      doorY,
+      doorPos.x,
+      doorPos.y,
       baseElevation + sillHeight,
-      wallAngle
+      wallGeo.angle
     );
 
     // Simple door geometry (thin box)
@@ -664,28 +810,21 @@ export class IfcExporter {
     const storey = storeys.find((s) => s.id === window.parentId);
     const storeyIfcId = storey ? this.storeyIds.get(storey.id) : null;
 
-    // Calculate window position in wall local coordinates
+    // Calculate window position using centralized utilities
     const { startPoint, endPoint, thickness } = hostWall.wallData;
-    const dx = endPoint.x - startPoint.x;
-    const dy = endPoint.y - startPoint.y;
-    const wallLength = Math.sqrt(dx * dx + dy * dy);
-    const wallAngle = Math.atan2(dy, dx);
+    const wallGeo = calculateWallGeometry(startPoint, endPoint);
 
-    // Window center position along wall
-    const windowCenterDistance = positionOnWall * wallLength;
-
-    // Window world position
-    const windowX = startPoint.x + (dx / wallLength) * windowCenterDistance;
-    const windowY = startPoint.y + (dy / wallLength) * windowCenterDistance;
+    // Window world position using getPointOnWall utility
+    const windowPos = getPointOnWall(startPoint, endPoint, positionOnWall);
 
     // Create opening in wall (include sillHeight for vertical offset)
     const baseElevation = storey?.elevation ?? 0;
     const openingPlacementId = this.createLocalPlacement(
       null,
-      windowX,
-      windowY,
+      windowPos.x,
+      windowPos.y,
       baseElevation + sillHeight,
-      wallAngle
+      wallGeo.angle
     );
 
     // Opening profile (rectangular hole)
@@ -736,10 +875,10 @@ export class IfcExporter {
     // Create window element
     const windowPlacementId = this.createLocalPlacement(
       null,
-      windowX,
-      windowY,
+      windowPos.x,
+      windowPos.y,
       baseElevation + sillHeight,
-      wallAngle
+      wallGeo.angle
     );
 
     // Simple window geometry (thin box)
@@ -1124,6 +1263,486 @@ export class IfcExporter {
     if (storeyIfcId) {
       this.createContainedInSpatialStructure(furnitureIfcId, storeyIfcId);
     }
+  }
+
+  /**
+   * Create IfcSpace from a space element
+   * IfcSpace represents a bounded volume within a building storey
+   */
+  private createSpace(space: BimElement, storeys: StoreyInfo[]): void {
+    if (!space.spaceData) return;
+
+    const { boundaryPolygon, spaceType, longName, gastroCategory } = space.spaceData;
+    const height = space.geometry.height;
+
+    // Find storey
+    const storey = storeys.find((s) => s.id === space.parentId);
+    const storeyIfcId = storey ? this.storeyIds.get(storey.id) : null;
+
+    // Create placement at storey elevation
+    const placementId = this.createLocalPlacement(null, 0, 0, storey?.elevation ?? 0);
+
+    // Create arbitrary closed profile from boundary polygon
+    const profileId = this.createArbitraryProfile(boundaryPolygon);
+
+    // Create extruded solid (space volume)
+    const solidId = this.createExtrudedSolid(profileId, height);
+
+    // Create shape representation
+    const shapeRepId = this.createShapeRepresentation(solidId, 'Body', 'SweptSolid');
+
+    // Create product representation
+    const productRepId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: productRepId,
+      type: WebIFC.IFCPRODUCTDEFINITIONSHAPE,
+      Name: null,
+      Description: null,
+      Representations: [{ type: 5, value: shapeRepId }],
+    });
+
+    // Create IfcSpace
+    const spaceIfcId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: spaceIfcId,
+      type: WebIFC.IFCSPACE,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: { type: 1, value: space.name },
+      Description: longName ? { type: 1, value: longName } : null,
+      ObjectType: gastroCategory ? { type: 1, value: gastroCategory } : null,
+      ObjectPlacement: { type: 5, value: placementId },
+      Representation: { type: 5, value: productRepId },
+      LongName: longName ? { type: 1, value: longName } : null,
+      CompositionType: { type: 3, value: 'ELEMENT' },
+      InteriorOrExteriorSpace: {
+        type: 3,
+        value: spaceType === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL',
+      },
+      ElevationWithFlooring: { type: 4, value: storey?.elevation ?? 0 },
+    });
+
+    this.spaceIds.set(space.id, spaceIfcId);
+
+    // Create property sets
+    this.createPropertySets(space, spaceIfcId);
+
+    // Create quantity sets for area/volume
+    this.createSpaceQuantities(space, spaceIfcId);
+
+    // Assign to storey
+    if (storeyIfcId) {
+      this.createContainedInSpatialStructure(spaceIfcId, storeyIfcId);
+    }
+  }
+
+  /**
+   * Create quantity sets for space (area, perimeter, volume)
+   */
+  private createSpaceQuantities(space: BimElement, spaceIfcId: number): void {
+    if (!space.spaceData) return;
+
+    const { area, perimeter } = space.spaceData;
+    const volume = area * space.geometry.height;
+
+    const quantities: number[] = [];
+
+    // IfcQuantityArea - GrossFloorArea
+    const areaId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: areaId,
+      type: WebIFC.IFCQUANTITYAREA,
+      Name: { type: 1, value: 'GrossFloorArea' },
+      Description: null,
+      Unit: null,
+      AreaValue: { type: 4, value: area },
+    });
+    quantities.push(areaId);
+
+    // IfcQuantityLength - GrossPerimeter
+    const perimId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: perimId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'GrossPerimeter' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: perimeter },
+    });
+    quantities.push(perimId);
+
+    // IfcQuantityVolume - GrossVolume
+    const volId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: volId,
+      type: WebIFC.IFCQUANTITYVOLUME,
+      Name: { type: 1, value: 'GrossVolume' },
+      Description: null,
+      Unit: null,
+      VolumeValue: { type: 4, value: volume },
+    });
+    quantities.push(volId);
+
+    // IfcQuantityLength - Height
+    const heightId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: heightId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'Height' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: space.geometry.height },
+    });
+    quantities.push(heightId);
+
+    // Create IfcElementQuantity
+    const qtoId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: qtoId,
+      type: WebIFC.IFCELEMENTQUANTITY,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: { type: 1, value: 'Qto_SpaceBaseQuantities' },
+      Description: null,
+      MethodOfMeasurement: null,
+      Quantities: quantities.map((id) => ({ type: 5, value: id })),
+    });
+
+    // Create IfcRelDefinesByProperties
+    const relId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: relId,
+      type: WebIFC.IFCRELDEFINESBYPROPERTIES,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: null,
+      Description: null,
+      RelatedObjects: [{ type: 5, value: spaceIfcId }],
+      RelatingPropertyDefinition: { type: 5, value: qtoId },
+    });
+  }
+
+  /**
+   * Create IfcStair from a stair element
+   * IfcStair represents a vertical circulation element
+   */
+  private createStair(stair: BimElement, storeys: StoreyInfo[]): void {
+    if (!stair.stairData) return;
+
+    const { width, rotation, steps, bottomStoreyId } = stair.stairData;
+    const { count: stepCount, riserHeight, treadDepth } = steps;
+
+    if (stepCount < 1) return;
+
+    // Find bottom storey (where stair starts)
+    const bottomStorey = storeys.find((s) => s.id === bottomStoreyId);
+    const storeyIfcId = bottomStorey ? this.storeyIds.get(bottomStorey.id) : null;
+
+    // Position from placement (Z-up: x, y are horizontal, z is vertical)
+    const posX = stair.placement.position.x;
+    const posY = stair.placement.position.y;
+    const posZ = bottomStorey?.elevation ?? 0;
+
+    // Create placement at stair start position with rotation
+    const placementId = this.createLocalPlacement(null, posX, posY, posZ, rotation);
+
+    // Create step geometry as multiple extruded solids
+    const solidIds: number[] = [];
+    const halfWidth = width / 2;
+    const treadThickness = 0.04; // 4cm tread thickness
+
+    for (let i = 0; i < stepCount; i++) {
+      const stepStartX = i * treadDepth;
+      const stepBottomZ = i * riserHeight;
+      const isLastStep = i === stepCount - 1;
+
+      // Each step is an L-shaped profile extruded along Y (width direction)
+      // For simplicity, we create a rectangular tread for each step
+      if (!isLastStep) {
+        // Regular step: tread + riser combined
+        // Profile: rectangle in XZ plane (tread depth x total step height)
+        const stepHeight = riserHeight + treadThickness;
+
+        // Create rectangular profile for tread
+        const treadPoints: { x: number; y: number }[] = [
+          { x: stepStartX, y: stepBottomZ },
+          { x: stepStartX + treadDepth, y: stepBottomZ },
+          { x: stepStartX + treadDepth, y: stepBottomZ + stepHeight },
+          { x: stepStartX, y: stepBottomZ + stepHeight },
+        ];
+
+        // Create profile for step (in XZ plane, extruded along Y)
+        const profileId = this.createStairStepProfile(treadPoints);
+
+        // Extrude along Y (width direction)
+        const solidId = this.createStairStepSolid(profileId, width, -halfWidth);
+        solidIds.push(solidId);
+      } else {
+        // Last step: just the riser/landing portion
+        const treadPoints: { x: number; y: number }[] = [
+          { x: stepStartX, y: stepBottomZ },
+          { x: stepStartX + treadThickness, y: stepBottomZ },
+          { x: stepStartX + treadThickness, y: stepBottomZ + riserHeight },
+          { x: stepStartX, y: stepBottomZ + riserHeight },
+        ];
+
+        const profileId = this.createStairStepProfile(treadPoints);
+        const solidId = this.createStairStepSolid(profileId, width, -halfWidth);
+        solidIds.push(solidId);
+      }
+    }
+
+    if (solidIds.length === 0) return;
+
+    // Create shape representation with all step solids
+    const shapeRepId = this.createMultiSolidShapeRepresentation(solidIds);
+
+    // Create product representation
+    const productRepId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: productRepId,
+      type: WebIFC.IFCPRODUCTDEFINITIONSHAPE,
+      Name: null,
+      Description: null,
+      Representations: [{ type: 5, value: shapeRepId }],
+    });
+
+    // Create IfcStair
+    const stairIfcId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: stairIfcId,
+      type: WebIFC.IFCSTAIR,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: { type: 1, value: stair.name },
+      Description: null,
+      ObjectType: null,
+      ObjectPlacement: { type: 5, value: placementId },
+      Representation: { type: 5, value: productRepId },
+      Tag: null,
+      ShapeType: { type: 3, value: 'STRAIGHT_RUN_STAIR' },
+    });
+
+    this.stairIds.set(stair.id, stairIfcId);
+
+    // Create property sets
+    this.createPropertySets(stair, stairIfcId);
+
+    // Create quantity sets for stair
+    this.createStairQuantities(stair, stairIfcId);
+
+    // Assign to storey
+    if (storeyIfcId) {
+      this.createContainedInSpatialStructure(stairIfcId, storeyIfcId);
+    }
+  }
+
+  /**
+   * Create a profile for a stair step in XZ plane
+   * Points are in local XZ coordinates (X = run direction, Z = height)
+   */
+  private createStairStepProfile(points: { x: number; y: number }[]): number {
+    // Create polyline from points (note: 'y' in input is actually Z coordinate)
+    const pointIds = points.map((p) => {
+      const pointId = this.getNextId();
+      this.ifcApi.WriteLine(this.modelId, {
+        expressID: pointId,
+        type: WebIFC.IFCCARTESIANPOINT,
+        Coordinates: [{ type: 4, value: p.x }, { type: 4, value: p.y }], // XZ stored as XY in 2D profile
+      });
+      return pointId;
+    });
+
+    // Close the polyline
+    pointIds.push(pointIds[0]!);
+
+    const polylineId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: polylineId,
+      type: WebIFC.IFCPOLYLINE,
+      Points: pointIds.map((id) => ({ type: 5, value: id })),
+    });
+
+    const profileId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: profileId,
+      type: WebIFC.IFCARBITRARYCLOSEDPROFILEDEF,
+      ProfileType: { type: 3, value: 'AREA' },
+      ProfileName: null,
+      OuterCurve: { type: 5, value: polylineId },
+    });
+
+    return profileId;
+  }
+
+  /**
+   * Create extruded solid for stair step
+   * Profile is in XZ plane, extruded along Y axis (width direction)
+   */
+  private createStairStepSolid(profileId: number, extrudeLength: number, yOffset: number): number {
+    // Extrusion direction along Y
+    const directionId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: directionId,
+      type: WebIFC.IFCDIRECTION,
+      DirectionRatios: [{ type: 4, value: 0 }, { type: 4, value: 1 }, { type: 4, value: 0 }],
+    });
+
+    // Position: X axis = profile X (run direction), Y axis from yOffset, Z axis = profile Y (height)
+    // We need to rotate the profile from XY to XZ plane
+    const originId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: originId,
+      type: WebIFC.IFCCARTESIANPOINT,
+      Coordinates: [{ type: 4, value: 0 }, { type: 4, value: yOffset }, { type: 4, value: 0 }],
+    });
+
+    // Axis: Z direction (the profile's normal, which becomes the extrusion reference)
+    const axisId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: axisId,
+      type: WebIFC.IFCDIRECTION,
+      DirectionRatios: [{ type: 4, value: 0 }, { type: 4, value: 1 }, { type: 4, value: 0 }],
+    });
+
+    // RefDirection: X direction (along run)
+    const refDirId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: refDirId,
+      type: WebIFC.IFCDIRECTION,
+      DirectionRatios: [{ type: 4, value: 1 }, { type: 4, value: 0 }, { type: 4, value: 0 }],
+    });
+
+    const positionId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: positionId,
+      type: WebIFC.IFCAXIS2PLACEMENT3D,
+      Location: { type: 5, value: originId },
+      Axis: { type: 5, value: axisId },
+      RefDirection: { type: 5, value: refDirId },
+    });
+
+    const solidId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: solidId,
+      type: WebIFC.IFCEXTRUDEDAREASOLID,
+      SweptArea: { type: 5, value: profileId },
+      Position: { type: 5, value: positionId },
+      ExtrudedDirection: { type: 5, value: directionId },
+      Depth: { type: 4, value: extrudeLength },
+    });
+
+    return solidId;
+  }
+
+  /**
+   * Create quantity sets for stair
+   */
+  private createStairQuantities(stair: BimElement, stairIfcId: number): void {
+    if (!stair.stairData) return;
+
+    const { width, totalRise, steps } = stair.stairData;
+    const { count, riserHeight, treadDepth, runLength } = steps;
+
+    const quantities: number[] = [];
+
+    // IfcQuantityLength - Width
+    const widthId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: widthId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'Width' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: width },
+    });
+    quantities.push(widthId);
+
+    // IfcQuantityLength - GrossHeight (total rise)
+    const heightId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: heightId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'GrossHeight' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: totalRise },
+    });
+    quantities.push(heightId);
+
+    // IfcQuantityLength - GrossLength (run length)
+    const lengthId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: lengthId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'GrossLength' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: runLength },
+    });
+    quantities.push(lengthId);
+
+    // IfcQuantityCount - NumberOfRiser
+    const riserCountId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: riserCountId,
+      type: WebIFC.IFCQUANTITYCOUNT,
+      Name: { type: 1, value: 'NumberOfRiser' },
+      Description: null,
+      Unit: null,
+      CountValue: { type: 4, value: count },
+    });
+    quantities.push(riserCountId);
+
+    // IfcQuantityLength - RiserHeight
+    const riserHeightId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: riserHeightId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'RiserHeight' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: riserHeight },
+    });
+    quantities.push(riserHeightId);
+
+    // IfcQuantityLength - TreadLength (tread depth)
+    const treadLengthId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: treadLengthId,
+      type: WebIFC.IFCQUANTITYLENGTH,
+      Name: { type: 1, value: 'TreadLength' },
+      Description: null,
+      Unit: null,
+      LengthValue: { type: 4, value: treadDepth },
+    });
+    quantities.push(treadLengthId);
+
+    // Create IfcElementQuantity
+    const qtoId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: qtoId,
+      type: WebIFC.IFCELEMENTQUANTITY,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: { type: 1, value: 'Qto_StairBaseQuantities' },
+      Description: null,
+      MethodOfMeasurement: null,
+      Quantities: quantities.map((id) => ({ type: 5, value: id })),
+    });
+
+    // Create IfcRelDefinesByProperties
+    const relId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: relId,
+      type: WebIFC.IFCRELDEFINESBYPROPERTIES,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: null,
+      Description: null,
+      RelatedObjects: [{ type: 5, value: stairIfcId }],
+      RelatingPropertyDefinition: { type: 5, value: qtoId },
+    });
   }
 
   // Helper methods

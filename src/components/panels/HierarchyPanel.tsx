@@ -1,16 +1,166 @@
-import { ChevronDown, ChevronRight, Building2, Layers, Box, Plus, Trash2, MapPin, LayoutGrid, DoorOpen, Columns, Square, Armchair } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, ChevronRight, Building2, Layers, Box, Plus, Trash2, MapPin, LayoutGrid, DoorOpen, Columns, Square, Armchair, Pencil, Eye, EyeOff, ArrowUp, ArrowDown } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useProjectStore, useElementStore, useSelectionStore, useViewStore } from '@/store';
 import { cn } from '@/lib/utils';
 import type { BimElement } from '@/types/bim';
 import { DEFAULT_STOREY_HEIGHT } from '@/types/bim';
 import { getElementCenter } from '@/lib/geometry';
 
+// Inline editable name component
+interface EditableNameProps {
+  value: string;
+  onSave: (newValue: string) => void;
+  className?: string;
+}
+
+// Inline editable number component for elevation
+interface EditableElevationProps {
+  value: number;
+  onSave: (newValue: number) => void;
+}
+
+function EditableElevation({ value, onSave }: EditableElevationProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value.toString());
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  useEffect(() => {
+    setEditValue(value.toString());
+  }, [value]);
+
+  const handleSave = () => {
+    const numValue = parseFloat(editValue);
+    if (!isNaN(numValue) && numValue !== value) {
+      onSave(numValue);
+    } else {
+      setEditValue(value.toString());
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      setEditValue(value.toString());
+      setIsEditing(false);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <input
+        ref={inputRef}
+        type="number"
+        step="0.1"
+        value={editValue}
+        onChange={(e) => setEditValue(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={handleKeyDown}
+        className="px-1 py-0 text-xs border rounded bg-background w-16"
+      />
+    );
+  }
+
+  return (
+    <span
+      className="cursor-pointer hover:underline text-xs text-muted-foreground"
+      onDoubleClick={() => setIsEditing(true)}
+      title="Doppelklick zum Bearbeiten der Elevation"
+    >
+      +{value}m
+    </span>
+  );
+}
+
+function EditableName({ value, onSave, className }: EditableNameProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleSave = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== value) {
+      onSave(trimmed);
+    } else {
+      setEditValue(value);
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      setEditValue(value);
+      setIsEditing(false);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        value={editValue}
+        onChange={(e) => setEditValue(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={handleKeyDown}
+        className="px-1 py-0 text-sm border rounded bg-background w-full max-w-[150px]"
+      />
+    );
+  }
+
+  return (
+    <span
+      className={cn('cursor-pointer hover:underline group/name', className)}
+      onDoubleClick={() => setIsEditing(true)}
+      title="Doppelklick zum Bearbeiten"
+    >
+      {value}
+      <Pencil
+        size={10}
+        className="inline ml-1 opacity-0 group-hover/name:opacity-50 transition-opacity"
+      />
+    </span>
+  );
+}
+
 export function HierarchyPanel() {
-  const { project, site, building, storeys, activeStoreyId, setActiveStorey, addStorey, removeStorey } = useProjectStore();
+  const {
+    project, site, building, storeys, activeStoreyId,
+    setActiveStorey, addStorey, removeStorey, updateStorey,
+    setProjectName, setSiteName, setBuildingName
+  } = useProjectStore();
   const { getElementsByStorey } = useElementStore();
   const { select, isSelected } = useSelectionStore();
-  const { focusOnPosition } = useViewStore();
+  const { focusOnPosition, showStoreyAbove, showStoreyBelow, toggleStoreyAbove, toggleStoreyBelow } = useViewStore();
+
+  // Find adjacent storeys for display labels
+  const adjacentStoreys = useMemo(() => {
+    if (!activeStoreyId) return { above: null, below: null };
+    const sortedStoreys = [...storeys].sort((a, b) => a.elevation - b.elevation);
+    const activeIndex = sortedStoreys.findIndex((s) => s.id === activeStoreyId);
+    if (activeIndex === -1) return { above: null, below: null };
+    return {
+      above: sortedStoreys[activeIndex + 1] ?? null,
+      below: sortedStoreys[activeIndex - 1] ?? null,
+    };
+  }, [storeys, activeStoreyId]);
 
   const [expandedStoreys, setExpandedStoreys] = useState<Set<string>>(
     new Set(storeys.map((s) => s.id))
@@ -68,21 +218,25 @@ export function HierarchyPanel() {
 
       <div className="space-y-1 text-sm">
         {/* Project */}
-        <div className="flex items-center gap-2 py-1">
+        <div className="flex items-center gap-2 py-1 group">
           <Building2 size={16} className="text-muted-foreground" />
-          <span className="font-medium">{project.name}</span>
+          <EditableName
+            value={project.name}
+            onSave={setProjectName}
+            className="font-medium"
+          />
         </div>
 
         {/* Site */}
-        <div className="flex items-center gap-2 py-1 pl-4">
+        <div className="flex items-center gap-2 py-1 pl-4 group">
           <MapPin size={14} className="text-muted-foreground" />
-          <span>{site.name}</span>
+          <EditableName value={site.name} onSave={setSiteName} />
         </div>
 
         {/* Building */}
-        <div className="flex items-center gap-2 py-1 pl-8">
+        <div className="flex items-center gap-2 py-1 pl-8 group">
           <Building2 size={14} className="text-muted-foreground" />
-          <span>{building.name}</span>
+          <EditableName value={building.name} onSave={setBuildingName} />
         </div>
 
         {/* Storeys */}
@@ -112,10 +266,15 @@ export function HierarchyPanel() {
                   {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </button>
                 <Layers size={14} className="text-muted-foreground" />
-                <span className={cn(isActive && 'font-medium')}>{storey.name}</span>
-                <span className="text-xs text-muted-foreground ml-1">
-                  +{storey.elevation}m
-                </span>
+                <EditableName
+                  value={storey.name}
+                  onSave={(name) => updateStorey(storey.id, { name })}
+                  className={cn(isActive && 'font-medium')}
+                />
+                <EditableElevation
+                  value={storey.elevation}
+                  onSave={(elevation) => updateStorey(storey.id, { elevation })}
+                />
                 <span className="text-xs text-muted-foreground ml-auto">
                   ({elements.length})
                 </span>
@@ -149,6 +308,54 @@ export function HierarchyPanel() {
             </div>
           );
         })}
+
+        {/* Ghost Storey Visibility Controls */}
+        <div className="pl-12 pt-3 pb-2 border-t border-border/50 mt-2">
+          <p className="text-xs font-medium text-muted-foreground mb-2">Geschoss-Anzeige</p>
+          <div className="space-y-1">
+            {/* Show storey above toggle */}
+            <button
+              onClick={toggleStoreyAbove}
+              disabled={!adjacentStoreys.above}
+              className={cn(
+                'flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded transition-colors',
+                adjacentStoreys.above
+                  ? showStoreyAbove
+                    ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                    : 'hover:bg-accent text-muted-foreground'
+                  : 'opacity-50 cursor-not-allowed text-muted-foreground'
+              )}
+              title={adjacentStoreys.above ? `${adjacentStoreys.above.name} einblenden` : 'Kein Geschoss darüber'}
+            >
+              <ArrowUp size={14} />
+              {showStoreyAbove ? <Eye size={14} /> : <EyeOff size={14} />}
+              <span className="truncate">
+                {adjacentStoreys.above ? adjacentStoreys.above.name : 'Kein Geschoss darüber'}
+              </span>
+            </button>
+
+            {/* Show storey below toggle */}
+            <button
+              onClick={toggleStoreyBelow}
+              disabled={!adjacentStoreys.below}
+              className={cn(
+                'flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded transition-colors',
+                adjacentStoreys.below
+                  ? showStoreyBelow
+                    ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                    : 'hover:bg-accent text-muted-foreground'
+                  : 'opacity-50 cursor-not-allowed text-muted-foreground'
+              )}
+              title={adjacentStoreys.below ? `${adjacentStoreys.below.name} einblenden` : 'Kein Geschoss darunter'}
+            >
+              <ArrowDown size={14} />
+              {showStoreyBelow ? <Eye size={14} /> : <EyeOff size={14} />}
+              <span className="truncate">
+                {adjacentStoreys.below ? adjacentStoreys.below.name : 'Kein Geschoss darunter'}
+              </span>
+            </button>
+          </div>
+        </div>
 
         {/* Add Storey Section */}
         <div className="pl-12 pt-2">

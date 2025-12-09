@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { Line, Html } from '@react-three/drei';
 import { useToolStore } from '@/store';
+import { useStoreyElevation } from '@/hooks';
 
 const PREVIEW_COLOR = '#3b82f6'; // Blue
 const POINT_COLOR = '#22c55e'; // Green
@@ -14,21 +15,22 @@ const CLOSE_COLOR = '#ef4444'; // Red (when about to close)
  */
 export function SlabPreview() {
   const { activeTool, slabPlacement, distanceInput } = useToolStore();
+  const storeyElevation = useStoreyElevation();
 
   const { points, previewPoint } = slabPlacement;
 
   // All hooks must be called before any conditional returns
-  // Build line points (convert 2D to 3D, Z-up)
+  // Build line points (convert 2D to 3D, Z-up with storey elevation)
   const linePoints: [number, number, number][] = useMemo(() => {
-    const pts: [number, number, number][] = points.map((p) => [p.x, p.y, 0.02]);
+    const pts: [number, number, number][] = points.map((p) => [p.x, p.y, storeyElevation + 0.02]);
 
     // Add preview point if available
     if (previewPoint) {
-      pts.push([previewPoint.x, previewPoint.y, 0.02]);
+      pts.push([previewPoint.x, previewPoint.y, storeyElevation + 0.02]);
     }
 
     return pts;
-  }, [points, previewPoint]);
+  }, [points, previewPoint, storeyElevation]);
 
   // Check if close to start point (for visual feedback)
   const isNearStart = useMemo(() => {
@@ -40,17 +42,17 @@ export function SlabPreview() {
     return Math.sqrt(dx * dx + dy * dy) < 0.3;
   }, [points, previewPoint]);
 
-  // Closed polygon preview (when we have 3+ points, Z-up)
+  // Closed polygon preview (when we have 3+ points, Z-up with storey elevation)
   const closingLine: [number, number, number][] | null = useMemo(() => {
     if (points.length < 2) return null;
     const lastPoint = points[points.length - 1];
     const firstPoint = points[0];
     if (!lastPoint || !firstPoint) return null;
     return [
-      [lastPoint.x, lastPoint.y, 0.02],
-      [firstPoint.x, firstPoint.y, 0.02],
+      [lastPoint.x, lastPoint.y, storeyElevation + 0.02],
+      [firstPoint.x, firstPoint.y, storeyElevation + 0.02],
     ];
-  }, [points]);
+  }, [points, storeyElevation]);
 
   // Don't show if not in slab mode or no points (after all hooks)
   if (activeTool !== 'slab') return null;
@@ -81,11 +83,11 @@ export function SlabPreview() {
         />
       )}
 
-      {/* Point markers (Z-up: no rotation needed) */}
+      {/* Point markers (Z-up: on storey elevation) */}
       {points.map((point, index) => (
         <mesh
           key={index}
-          position={[point.x, point.y, 0.03]}
+          position={[point.x, point.y, storeyElevation + 0.03]}
         >
           <circleGeometry args={[index === 0 ? 0.12 : 0.08, 16]} />
           <meshBasicMaterial
@@ -94,10 +96,10 @@ export function SlabPreview() {
         </mesh>
       ))}
 
-      {/* Preview point marker (Z-up: no rotation needed) */}
+      {/* Preview point marker (Z-up: on storey elevation) */}
       {previewPoint && (
         <mesh
-          position={[previewPoint.x, previewPoint.y, 0.03]}
+          position={[previewPoint.x, previewPoint.y, storeyElevation + 0.03]}
         >
           <ringGeometry args={[0.06, 0.1, 16]} />
           <meshBasicMaterial
@@ -110,7 +112,7 @@ export function SlabPreview() {
 
       {/* Filled preview polygon (semi-transparent) */}
       {points.length >= 3 && (
-        <SlabFillPreview points={points} />
+        <SlabFillPreview points={points} storeyElevation={storeyElevation} />
       )}
 
       {/* Distance label for current segment */}
@@ -128,7 +130,7 @@ export function SlabPreview() {
 
         return (
           <Html
-            position={[midX, midY, 0.1]}
+            position={[midX, midY, storeyElevation + 0.1]}
             center
             style={{ pointerEvents: 'none' }}
           >
@@ -156,7 +158,7 @@ export function SlabPreview() {
 /**
  * Semi-transparent fill for the slab preview
  */
-function SlabFillPreview({ points }: { points: { x: number; y: number }[] }) {
+function SlabFillPreview({ points, storeyElevation }: { points: { x: number; y: number }[]; storeyElevation: number }) {
   const geometry = useMemo(() => {
     const firstPoint = points[0];
     if (!firstPoint) return null;
@@ -178,7 +180,7 @@ function SlabFillPreview({ points }: { points: { x: number; y: number }[] }) {
   if (!geometry) return null;
 
   return (
-    <mesh geometry={geometry} position={[0, 0, 0.01]}>
+    <mesh geometry={geometry} position={[0, 0, storeyElevation + 0.01]}>
       <meshBasicMaterial
         color="#3b82f6"
         transparent

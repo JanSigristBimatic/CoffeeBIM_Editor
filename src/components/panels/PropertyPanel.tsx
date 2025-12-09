@@ -6,6 +6,8 @@ import { WallProperties } from './WallProperties';
 import { SlabProperties } from './SlabProperties';
 import { FurnitureProperties } from './FurnitureProperties';
 import { CounterProperties } from './CounterProperties';
+import { SpaceProperties } from './SpaceProperties';
+import { StairProperties } from './StairProperties';
 
 export function PropertyPanel() {
   const { getSelectedIds } = useSelectionStore();
@@ -122,6 +124,20 @@ export function PropertyPanel() {
       {element.type === 'counter' && element.counterData && (
         <div className="mt-4 pt-4 border-t">
           <CounterProperties element={element} />
+        </div>
+      )}
+
+      {/* Space-specific properties */}
+      {element.type === 'space' && element.spaceData && (
+        <div className="mt-4 pt-4 border-t">
+          <SpaceProperties element={element} />
+        </div>
+      )}
+
+      {/* Stair-specific properties */}
+      {element.type === 'stair' && element.stairData && (
+        <div className="mt-4 pt-4 border-t">
+          <StairProperties element={element} />
         </div>
       )}
     </div>

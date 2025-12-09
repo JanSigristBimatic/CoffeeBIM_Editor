@@ -78,7 +78,11 @@ function extractMeshData(object: Group, scale: number): MeshData | null {
 interface FurnitureMeshProps {
   element: BimElement;
   selected: boolean;
+  isGhost?: boolean;
+  ghostOpacity?: number;
 }
+
+const GHOST_COLOR = '#9e9e9e';
 
 // Fallback box when model is loading or fails (Z-up)
 function FallbackBox({
@@ -86,20 +90,25 @@ function FallbackBox({
   depth,
   height,
   selected,
+  isGhost = false,
+  ghostOpacity = 0.25,
 }: {
   width: number;
   depth: number;
   height: number;
   selected: boolean;
+  isGhost?: boolean;
+  ghostOpacity?: number;
 }) {
   return (
-    <mesh position={[0, 0, height / 2]}>
+    <mesh position={[0, 0, height / 2]} castShadow={!isGhost} receiveShadow={!isGhost}>
       <boxGeometry args={[width, depth, height]} />
       <meshStandardMaterial
-        color={selected ? '#90caf9' : '#888888'}
+        color={isGhost ? GHOST_COLOR : selected ? '#90caf9' : '#888888'}
         transparent
-        opacity={0.5}
-        wireframe
+        opacity={isGhost ? ghostOpacity : 0.5}
+        wireframe={!isGhost}
+        depthWrite={!isGhost}
       />
     </mesh>
   );
@@ -416,10 +425,11 @@ function ModelLoader({
   return <FallbackBox width={width} depth={depth} height={height} selected={selected} />;
 }
 
-export function FurnitureMesh({ element, selected }: FurnitureMeshProps) {
+export function FurnitureMesh({ element, selected, isGhost = false, ghostOpacity = 0.25 }: FurnitureMeshProps) {
   const groupRef = useRef<Group>(null);
   const { updateElement } = useElementStore();
   const { handlers } = useDragElement(element);
+  const effectiveHandlers = isGhost ? {} : handlers;
 
   const { furnitureData, placement } = element;
 
@@ -467,18 +477,18 @@ export function FurnitureMesh({ element, selected }: FurnitureMeshProps) {
   };
 
   // Handle mesh extraction for IFC export
+  // Re-extract when scale changes to ensure correct geometry in IFC export
   const handleMeshExtracted = (meshData: MeshData) => {
     if (!furnitureData) return;
 
-    // Only store mesh data once (when not already present)
-    if (!furnitureData.meshData) {
-      updateElement(element.id, {
-        furnitureData: {
-          ...furnitureData,
-          meshData,
-        },
-      });
-    }
+    // Always update meshData - the scale is baked into the vertices
+    // We need to update whenever extracted to ensure IFC export uses current scale
+    updateElement(element.id, {
+      furnitureData: {
+        ...furnitureData,
+        meshData,
+      },
+    });
   };
 
   const { modelUrl, modelFormat, width, depth, height, scale } = furnitureData;
@@ -490,12 +500,33 @@ export function FurnitureMesh({ element, selected }: FurnitureMeshProps) {
   const posZ = typeof position.z === 'number' && isFinite(position.z) ? position.z : 0;
 
   // Z-up: rotate around Z axis instead of Y
+  // For ghost elements, show a simple fallback box instead of loading complex models
+  if (isGhost) {
+    return (
+      <group
+        ref={groupRef}
+        position={[posX, posY, posZ]}
+        rotation={[0, 0, rotation]}
+        renderOrder={-1}
+      >
+        <FallbackBox
+          width={width}
+          depth={depth}
+          height={height}
+          selected={false}
+          isGhost={true}
+          ghostOpacity={ghostOpacity}
+        />
+      </group>
+    );
+  }
+
   return (
     <group
       ref={groupRef}
       position={[posX, posY, posZ]}
       rotation={[0, 0, rotation]}
-      {...handlers}
+      {...effectiveHandlers}
     >
       {modelUrl && modelFormat ? (
         <Suspense

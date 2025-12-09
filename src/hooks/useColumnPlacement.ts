@@ -21,9 +21,13 @@ function snapToGrid(value: number): number {
 export function useColumnPlacement() {
   const { activeTool, columnPlacement, setColumnPreview, resetColumnPlacement, setCursorPosition } = useToolStore();
   const { addElement } = useElementStore();
-  const { activeStoreyId } = useProjectStore();
+  const { activeStoreyId, storeys } = useProjectStore();
 
   const { params } = columnPlacement;
+
+  // Get storey elevation for Z position
+  const activeStorey = storeys.find(s => s.id === activeStoreyId);
+  const storeyElevation = activeStorey?.elevation ?? 0;
 
   /**
    * Handle click to place column
@@ -51,6 +55,7 @@ export function useColumnPlacement() {
         const column = createColumn({
           position,
           storeyId: activeStoreyId,
+          elevation: storeyElevation,
           profileType: params.profileType,
           width: params.width,
           depth: params.depth,
@@ -68,7 +73,7 @@ export function useColumnPlacement() {
         console.error('Could not create column:', error);
       }
     },
-    [activeTool, activeStoreyId, params, addElement, resetColumnPlacement]
+    [activeTool, activeStoreyId, storeyElevation, params, addElement, resetColumnPlacement]
   );
 
   /**

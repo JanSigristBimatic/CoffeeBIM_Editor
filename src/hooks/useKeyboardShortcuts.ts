@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useToolStore, useSelectionStore, useElementStore, useViewStore, usePdfUnderlayStore } from '@/store';
+import { useToolStore, useSelectionStore, useElementStore, useViewStore, usePdfUnderlayStore, useMeasurementStore } from '@/store';
 import type { ToolType } from '@/types/tools';
 import { useHistory } from './useHistory';
 
@@ -9,9 +9,10 @@ import { useHistory } from './useHistory';
 export function useKeyboardShortcuts() {
   const { setActiveTool, cancelCurrentOperation } = useToolStore();
   const { getSelectedIds, clearSelection } = useSelectionStore();
-  const { removeElements } = useElementStore();
-  const { toggleGrid, toggleViewMode, toggleSnapOrthogonal } = useViewStore();
+  const { removeElements, moveElements } = useElementStore();
+  const { toggleGrid, cycleViewMode, toggleSnapOrthogonal, toggleDimensions, snapSize } = useViewStore();
   const { isLoaded: hasPdf, toggleVisible: togglePdfVisible } = usePdfUnderlayStore();
+  const { selectedMeasurementId, removeSelectedMeasurement, cancelPlacement } = useMeasurementStore();
   const { undo, redo, canUndo, canRedo } = useHistory();
 
   useEffect(() => {
@@ -30,16 +31,18 @@ export function useKeyboardShortcuts() {
       const ctrl = event.ctrlKey || event.metaKey;
       const shift = event.shiftKey;
 
-      // Tool shortcuts (no modifiers) - German-friendly: A=Auswahl, W=Wand, T=Tür, F=Fenster, S=Säule, B=Boden, K=Theke
+      // Tool shortcuts (no modifiers) - German-friendly: A=Auswahl, W=Wand, T=Tür, F=Fenster, S=Säule, B=Boden, K=Theke, R=Raum, M=Messen
       if (!ctrl && !shift) {
         const toolShortcuts: Record<string, ToolType> = {
-          a: 'select',    // Auswahl
-          w: 'wall',      // Wand
-          t: 'door',      // Tür
-          f: 'window',    // Fenster
-          s: 'column',    // Säule
-          b: 'slab',      // Boden
-          k: 'counter',   // Theke/Tresen
+          a: 'select',       // Auswahl
+          w: 'wall',         // Wand
+          t: 'door',         // Tür
+          f: 'window',       // Fenster
+          s: 'column',       // Säule
+          b: 'slab',         // Boden
+          k: 'counter',      // Theke/Tresen
+          r: 'space-detect', // Raum erkennen
+          m: 'measure',      // Messen
         };
 
         const tool = toolShortcuts[event.key.toLowerCase()];
@@ -50,10 +53,29 @@ export function useKeyboardShortcuts() {
         }
       }
 
+      // Shift+R - Raum zeichnen (manual polygon)
+      if (!ctrl && shift && event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        setActiveTool('space-draw');
+        return;
+      }
+
+      // Shift+S - Treppe (stair)
+      if (!ctrl && shift && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        setActiveTool('stair');
+        return;
+      }
+
       // Escape - cancel current operation and return to select mode
       if (event.key === 'Escape') {
         event.preventDefault();
         const { activeTool } = useToolStore.getState();
+
+        // Cancel measurement placement if active
+        if (activeTool === 'measure') {
+          cancelPlacement();
+        }
 
         // If not already in select mode, cancel operation and switch to select
         if (activeTool !== 'select') {
@@ -64,11 +86,19 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Delete/Backspace - delete selected elements
+      // Delete/Backspace - delete selected elements or measurements
       if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+
+        // First check for selected measurement
+        if (selectedMeasurementId) {
+          removeSelectedMeasurement();
+          return;
+        }
+
+        // Then check for selected elements
         const selectedIds = getSelectedIds();
         if (selectedIds.length > 0) {
-          event.preventDefault();
           removeElements(selectedIds);
           clearSelection();
         }
@@ -89,6 +119,13 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      // D - toggle dimensions
+      if (event.key.toLowerCase() === 'd' && !ctrl) {
+        event.preventDefault();
+        toggleDimensions();
+        return;
+      }
+
       // P - toggle PDF underlay visibility
       if (event.key.toLowerCase() === 'p' && !ctrl && hasPdf) {
         event.preventDefault();
@@ -96,11 +133,42 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Tab - toggle 2D/3D view
-      if (event.key === 'Tab' && !ctrl) {
+      // Tab or V - cycle view mode (2D → 3D → Split)
+      if ((event.key === 'Tab' || event.key.toLowerCase() === 'v') && !ctrl) {
         event.preventDefault();
-        toggleViewMode();
+        cycleViewMode();
         return;
+      }
+
+      // Arrow keys - move selected elements
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        const selectedIds = getSelectedIds();
+        if (selectedIds.length > 0) {
+          event.preventDefault();
+
+          // Shift = larger steps (10x), otherwise use snap size
+          const step = shift ? snapSize * 10 : snapSize;
+
+          // Map arrow keys to X/Y movement (Z-up coordinate system)
+          const delta = { x: 0, y: 0, z: 0 };
+          switch (event.key) {
+            case 'ArrowUp':
+              delta.y = step;
+              break;
+            case 'ArrowDown':
+              delta.y = -step;
+              break;
+            case 'ArrowLeft':
+              delta.x = -step;
+              break;
+            case 'ArrowRight':
+              delta.x = step;
+              break;
+          }
+
+          moveElements(selectedIds, delta);
+          return;
+        }
       }
 
       // Ctrl+Z - undo
@@ -136,11 +204,17 @@ export function useKeyboardShortcuts() {
     clearSelection,
     getSelectedIds,
     removeElements,
+    moveElements,
     toggleGrid,
-    toggleViewMode,
+    cycleViewMode,
     toggleSnapOrthogonal,
+    toggleDimensions,
+    snapSize,
     hasPdf,
     togglePdfVisible,
+    selectedMeasurementId,
+    removeSelectedMeasurement,
+    cancelPlacement,
     undo,
     redo,
     canUndo,

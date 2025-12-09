@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { BimElement, WallData } from '@/types/bim';
 import type { Point2D } from '@/types/geometry';
+import { calculateWallGeometry } from '@/lib/geometry';
 
 export const DEFAULT_WALL_THICKNESS = 0.2; // meters
 export const DEFAULT_WALL_HEIGHT = 3.0; // meters
@@ -11,6 +12,7 @@ export interface CreateWallParams {
   thickness?: number;
   height?: number;
   storeyId: string;
+  elevation?: number; // Storey elevation (Z position)
   name?: string;
 }
 
@@ -24,16 +26,15 @@ export function createWall(params: CreateWallParams): BimElement {
     thickness = DEFAULT_WALL_THICKNESS,
     height = DEFAULT_WALL_HEIGHT,
     storeyId,
+    elevation = 0,
     name,
   } = params;
 
-  // Calculate wall direction and length
-  const dx = endPoint.x - startPoint.x;
-  const dy = endPoint.y - startPoint.y;
-  const length = Math.sqrt(dx * dx + dy * dy);
+  // Calculate wall geometry using centralized utility
+  const wallGeometry = calculateWallGeometry(startPoint, endPoint);
 
   // Don't create walls that are too short
-  if (length < 0.1) {
+  if (wallGeometry.length < 0.1) {
     throw new Error('Wall is too short (minimum 0.1m)');
   }
 
@@ -44,13 +45,10 @@ export function createWall(params: CreateWallParams): BimElement {
   // Profile is in XY plane, will be extruded along Z
   const profile: Point2D[] = [
     { x: 0, y: -halfThickness },
-    { x: length, y: -halfThickness },
-    { x: length, y: halfThickness },
+    { x: wallGeometry.length, y: -halfThickness },
+    { x: wallGeometry.length, y: halfThickness },
     { x: 0, y: halfThickness },
   ];
-
-  // Calculate rotation angle (around Z-axis for Z-up system)
-  const angle = Math.atan2(dy, dx);
 
   const wallData: WallData = {
     startPoint: { ...startPoint },
@@ -73,14 +71,14 @@ export function createWall(params: CreateWallParams): BimElement {
       direction: { x: 0, y: 0, z: 1 }, // Extrude upward (Z-up)
     },
     placement: {
-      // Z-up coordinate system: 2D (x,y) → 3D (x, y, 0)
-      position: { x: startPoint.x, y: startPoint.y, z: 0 },
+      // Z-up coordinate system: 2D (x,y) → 3D (x, y, elevation)
+      position: { x: startPoint.x, y: startPoint.y, z: elevation },
       rotation: {
         // Rotation around Z-axis (quaternion)
         x: 0,
         y: 0,
-        z: Math.sin(angle / 2),
-        w: Math.cos(angle / 2),
+        z: Math.sin(wallGeometry.angle / 2),
+        w: Math.cos(wallGeometry.angle / 2),
       },
     },
     properties: [
@@ -103,9 +101,7 @@ export function createWall(params: CreateWallParams): BimElement {
 export function calculateWallLength(wall: BimElement): number {
   if (!wall.wallData) return 0;
   const { startPoint, endPoint } = wall.wallData;
-  const dx = endPoint.x - startPoint.x;
-  const dy = endPoint.y - startPoint.y;
-  return Math.sqrt(dx * dx + dy * dy);
+  return calculateWallGeometry(startPoint, endPoint).length;
 }
 
 /**
@@ -119,25 +115,23 @@ export function getPositionOnWall(
   if (!wall.wallData) return null;
 
   const { startPoint, endPoint } = wall.wallData;
-  const dx = endPoint.x - startPoint.x;
-  const dy = endPoint.y - startPoint.y;
-  const length = Math.sqrt(dx * dx + dy * dy);
+  const geo = calculateWallGeometry(startPoint, endPoint);
 
-  if (length < 0.01) return null;
+  if (geo.length < 0.01) return null;
 
   // Vector from start to point
   const px = point.x - startPoint.x;
   const py = point.y - startPoint.y;
 
   // Project point onto wall line
-  const t = (px * dx + py * dy) / (length * length);
+  const t = (px * geo.dx + py * geo.dy) / (geo.length * geo.length);
 
   // Check if projection is within wall bounds
   if (t < 0 || t > 1) return null;
 
   // Calculate distance from point to wall line
-  const projX = startPoint.x + t * dx;
-  const projY = startPoint.y + t * dy;
+  const projX = startPoint.x + t * geo.dx;
+  const projY = startPoint.y + t * geo.dy;
   const distance = Math.sqrt((point.x - projX) ** 2 + (point.y - projY) ** 2);
 
   // Check if within tolerance
@@ -159,10 +153,8 @@ export function updateWallDimensions(
   const newWallData = { ...wall.wallData, ...updates };
   const { startPoint, endPoint } = newWallData;
 
-  // Calculate wall length
-  const dx = endPoint.x - startPoint.x;
-  const dy = endPoint.y - startPoint.y;
-  const length = Math.sqrt(dx * dx + dy * dy);
+  // Calculate wall length using centralized utility
+  const { length } = calculateWallGeometry(startPoint, endPoint);
 
   // Recalculate profile with new thickness
   const halfThickness = newWallData.thickness / 2;

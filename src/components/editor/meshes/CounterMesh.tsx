@@ -12,6 +12,8 @@ interface CounterMeshProps {
   onClick?: () => void;
   onPointerEnter?: () => void;
   onPointerLeave?: () => void;
+  isGhost?: boolean;
+  ghostOpacity?: number;
 }
 
 /**
@@ -49,12 +51,17 @@ function createPolygonShape(frontPath: Point2D[], backPath: Point2D[]): THREE.Sh
  * - Countertop with overhang
  * - Optional footrest bar
  */
+const GHOST_COLOR = '#9e9e9e';
+
 export function CounterMesh({
   element,
   isSelected = false,
   isHovered = false,
+  isGhost = false,
+  ghostOpacity = 0.25,
 }: CounterMeshProps) {
   const { handlers } = useDragElement(element);
+  const effectiveHandlers = isGhost ? {} : handlers;
   const counterData = element.counterData;
 
   const meshes = useMemo(() => {
@@ -144,20 +151,26 @@ export function CounterMesh({
 
   if (!meshes) return null;
 
-  // Calculate color based on selection/hover state
+  // Calculate color based on selection/hover/ghost state
   const getColor = (baseColor: string): string => {
+    if (isGhost) return GHOST_COLOR;
     if (isSelected) return '#3B82F6'; // Blue for selected
     if (isHovered) return '#60A5FA'; // Lighter blue for hovered
     return baseColor;
   };
 
+  // Get storey elevation from element placement
+  const baseZ = element.placement.position.z;
+
   return (
-    <group {...handlers}>
+    <group {...effectiveHandlers} renderOrder={isGhost ? -1 : 0}>
       {meshes.map((config, index) => (
         <mesh
           key={index}
-          position={[0, 0, config.zOffset]}
+          position={[0, 0, baseZ + config.zOffset]}
           rotation={[0, 0, 0]}
+          castShadow={!isGhost}
+          receiveShadow={!isGhost}
         >
           <extrudeGeometry
             args={[
@@ -170,8 +183,11 @@ export function CounterMesh({
           />
           <meshStandardMaterial
             color={getColor(config.color)}
-            roughness={0.7}
-            metalness={0.1}
+            roughness={isGhost ? 0.9 : 0.7}
+            metalness={isGhost ? 0.0 : 0.1}
+            transparent={isGhost}
+            opacity={isGhost ? ghostOpacity : 1}
+            depthWrite={!isGhost}
           />
         </mesh>
       ))}

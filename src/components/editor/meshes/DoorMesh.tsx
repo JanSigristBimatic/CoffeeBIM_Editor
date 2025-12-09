@@ -8,21 +8,25 @@ import { useDragElement } from '../TransformGizmo';
 interface DoorMeshProps {
   element: BimElement;
   selected: boolean;
+  isGhost?: boolean;
+  ghostOpacity?: number;
 }
 
 // Material colors
 const FRAME_COLOR = '#8B4513'; // Brown (wood)
 const PANEL_COLOR = '#A0522D'; // Sienna (wood panel)
 const FRAME_COLOR_SELECTED = '#90caf9';
+const GHOST_COLOR = '#9e9e9e';
 
 const FRAME_WIDTH = 0.05; // Frame thickness
 const FRAME_DEPTH = 0.04; // Frame depth
 const PANEL_THICKNESS = 0.04; // Door panel thickness
 
-export function DoorMesh({ element, selected }: DoorMeshProps) {
+export function DoorMesh({ element, selected, isGhost = false, ghostOpacity = 0.25 }: DoorMeshProps) {
   const groupRef = useRef<Group>(null);
   const { getElement, elements } = useElementStore();
   const { handlers } = useDragElement(element);
+  const effectiveHandlers = isGhost ? {} : handlers;
 
   const { doorData } = element;
 
@@ -86,20 +90,40 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
 
   // Materials
   const frameMaterial = useMemo(() => {
+    if (isGhost) {
+      return new MeshStandardMaterial({
+        color: GHOST_COLOR,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: ghostOpacity,
+        depthWrite: false,
+      });
+    }
     return new MeshStandardMaterial({
       color: selected ? FRAME_COLOR_SELECTED : FRAME_COLOR,
       roughness: 0.7,
       metalness: 0.1,
     });
-  }, [selected]);
+  }, [selected, isGhost, ghostOpacity]);
 
   const panelMaterial = useMemo(() => {
+    if (isGhost) {
+      return new MeshStandardMaterial({
+        color: GHOST_COLOR,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: ghostOpacity,
+        depthWrite: false,
+      });
+    }
     return new MeshStandardMaterial({
       color: selected ? FRAME_COLOR_SELECTED : PANEL_COLOR,
       roughness: 0.8,
       metalness: 0.0,
     });
-  }, [selected]);
+  }, [selected, isGhost, ghostOpacity]);
 
   if (!doorData || !transform || !frameGeometries || !panelGeometry) return null;
 
@@ -114,16 +138,17 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
       {/* Door frame and panel group (rotated to stand up) */}
       <group
         ref={groupRef}
-        position={[transform.position.x, transform.position.y, 0]}
+        position={[transform.position.x, transform.position.y, hostWall?.placement.position.z ?? 0]}
         rotation={new Euler(Math.PI / 2, 0, transform.angle, 'ZXY')}
-        {...handlers}
+        {...effectiveHandlers}
+        renderOrder={isGhost ? -1 : 0}
       >
         {/* Left frame - in local coords: X is along wall, Y is height (becomes Z after rotation) */}
         <mesh
           geometry={frameGeometries.left}
           material={frameMaterial}
           position={[-hw - FRAME_WIDTH / 2, height / 2, 0]}
-          castShadow
+          castShadow={!isGhost}
         />
 
         {/* Right frame */}
@@ -131,7 +156,7 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
           geometry={frameGeometries.right}
           material={frameMaterial}
           position={[hw + FRAME_WIDTH / 2, height / 2, 0]}
-          castShadow
+          castShadow={!isGhost}
         />
 
         {/* Top frame */}
@@ -139,7 +164,7 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
           geometry={frameGeometries.top}
           material={frameMaterial}
           position={[0, height + FRAME_WIDTH / 2, 0]}
-          castShadow
+          castShadow={!isGhost}
         />
 
         {/* Door panel (slightly offset to show it's a door) */}
@@ -147,24 +172,27 @@ export function DoorMesh({ element, selected }: DoorMeshProps) {
           geometry={panelGeometry}
           material={panelMaterial}
           position={[0, height / 2, PANEL_THICKNESS / 2]}
-          castShadow
+          castShadow={!isGhost}
         />
       </group>
 
       {/* Door swing arc - separate group with only Z rotation (lies flat on ground) */}
-      <group
-        position={[transform.position.x, transform.position.y, 0]}
-        rotation={new Euler(0, 0, transform.angle)}
-      >
-        <DoorSwingArc
-          doorWidth={width}
-          doorType={doorData.doorType}
-          swingDirection={doorData.swingDirection}
-          swingSide={doorData.swingSide}
-          selected={selected}
-          zOffset={0.02}
-        />
-      </group>
+      {/* Hide swing arc for ghost elements */}
+      {!isGhost && (
+        <group
+          position={[transform.position.x, transform.position.y, hostWall?.placement.position.z ?? 0]}
+          rotation={new Euler(0, 0, transform.angle)}
+        >
+          <DoorSwingArc
+            doorWidth={width}
+            doorType={doorData.doorType}
+            swingDirection={doorData.swingDirection}
+            swingSide={doorData.swingSide}
+            selected={selected}
+            zOffset={0.02}
+          />
+        </group>
+      )}
     </>
   );
 }

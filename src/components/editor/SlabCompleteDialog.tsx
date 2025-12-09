@@ -19,9 +19,13 @@ import { createWall } from '@/bim/elements/Wall';
 export function SlabCompleteDialog() {
   const { slabCompletionDialog, closeSlabCompletionDialog } = useToolStore();
   const { addElement } = useElementStore();
-  const { activeStoreyId } = useProjectStore();
+  const { activeStoreyId, storeys } = useProjectStore();
 
   const { isOpen, pendingPoints } = slabCompletionDialog;
+
+  // Get storey elevation for Z position
+  const activeStorey = storeys.find(s => s.id === activeStoreyId);
+  const storeyElevation = activeStorey?.elevation ?? 0;
 
   /**
    * Create slab element from pending points
@@ -34,6 +38,7 @@ export function SlabCompleteDialog() {
         outline: pendingPoints,
         storeyId: activeStoreyId,
         slabType: 'floor',
+        elevation: storeyElevation,
       });
       addElement(slab);
       return slab;
@@ -41,7 +46,7 @@ export function SlabCompleteDialog() {
       console.error('Could not create slab:', error);
       return null;
     }
-  }, [activeStoreyId, pendingPoints, addElement]);
+  }, [activeStoreyId, pendingPoints, storeyElevation, addElement]);
 
   /**
    * Create walls along the slab outline edges
@@ -61,6 +66,7 @@ export function SlabCompleteDialog() {
           startPoint,
           endPoint,
           storeyId: activeStoreyId,
+          elevation: storeyElevation,
         });
         addElement(wall);
       } catch (error) {
@@ -68,7 +74,7 @@ export function SlabCompleteDialog() {
         console.warn('Could not create wall segment:', error);
       }
     }
-  }, [activeStoreyId, pendingPoints, addElement]);
+  }, [activeStoreyId, pendingPoints, storeyElevation, addElement]);
 
   /**
    * Handle "Only Slab" button

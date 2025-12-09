@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { MapPin } from 'lucide-react';
-import { Canvas3D, Toolbar, SlabCompleteDialog, DistanceInputOverlay } from '@/components/editor';
-import { PropertyPanel, HierarchyPanel, DoorParameterPanel, WindowParameterPanel, ColumnParameterPanel, CounterParameterPanel } from '@/components/panels';
+import { SplitView, Toolbar, SlabCompleteDialog, DistanceInputOverlay } from '@/components/editor';
+import { PropertyPanel, HierarchyPanel, DoorParameterPanel, WindowParameterPanel, ColumnParameterPanel, CounterParameterPanel, StairParameterPanel } from '@/components/panels';
 import { useKeyboardShortcuts, useStorageSync } from '@/hooks';
 import { useViewStore, useToolStore, useProjectStore } from '@/store';
 import { requestPersistentStorage } from '@/lib/storage';
@@ -19,7 +19,7 @@ function App() {
   }, []);
 
   const { viewMode } = useViewStore();
-  const { activeTool, wallPlacement, slabPlacement, counterPlacement, distanceInput } = useToolStore();
+  const { activeTool, wallPlacement, slabPlacement, counterPlacement, stairPlacement, distanceInput } = useToolStore();
   const { storeys, activeStoreyId } = useProjectStore();
 
   // Get active storey name
@@ -63,6 +63,12 @@ function App() {
       }
       return `${counterPlacement.points.length} Punkte – Distanz eingeben oder Rechtsklick`;
     }
+    if (activeTool === 'stair') {
+      if (!stairPlacement.startPoint) {
+        return 'Klicken Sie, um den Startpunkt der Treppe zu setzen';
+      }
+      return 'Klicken Sie erneut, um die Laufrichtung festzulegen';
+    }
     return 'Bereit';
   };
   const toolStatus = getToolStatus();
@@ -85,30 +91,31 @@ function App() {
           <HierarchyPanel />
         </aside>
 
-        {/* 3D Canvas */}
-        <main className="flex-1 relative">
-          <Canvas3D />
+        {/* Editor Area */}
+        <main className="flex-1 flex flex-col relative">
+          {/* View Content */}
+          <div className="flex-1 relative">
+            <SplitView />
 
-          {/* View Mode Indicator */}
-          <div className="absolute top-4 left-4 bg-background/80 backdrop-blur px-3 py-1 rounded-full text-sm">
-            {viewMode === '3d' ? '3D Ansicht' : '2D Grundriss'}
+            {/* Door Parameter Panel (floating, shows when door tool active) */}
+            <DoorParameterPanel />
+
+            {/* Window Parameter Panel (floating, shows when window tool active) */}
+            <WindowParameterPanel />
+
+            {/* Column Parameter Panel (floating, shows when column tool active) */}
+            <ColumnParameterPanel />
+
+            {/* Counter Parameter Panel (floating, shows when counter tool active) */}
+            {activeTool === 'counter' && (
+              <div className="absolute top-4 right-4 w-64 bg-card border rounded-lg shadow-lg z-10">
+                <CounterParameterPanel />
+              </div>
+            )}
+
+            {/* Stair Parameter Panel (floating, shows when stair tool active) */}
+            <StairParameterPanel />
           </div>
-
-          {/* Door Parameter Panel (floating, shows when door tool active) */}
-          <DoorParameterPanel />
-
-          {/* Window Parameter Panel (floating, shows when window tool active) */}
-          <WindowParameterPanel />
-
-          {/* Column Parameter Panel (floating, shows when column tool active) */}
-          <ColumnParameterPanel />
-
-          {/* Counter Parameter Panel (floating, shows when counter tool active) */}
-          {activeTool === 'counter' && (
-            <div className="absolute top-4 right-4 w-64 bg-card border rounded-lg shadow-lg">
-              <CounterParameterPanel />
-            </div>
-          )}
         </main>
 
         {/* Right Panel - Properties */}
@@ -129,8 +136,10 @@ function App() {
         <span>Raster: 10cm</span>
         <span className="mx-2">|</span>
         <span className="capitalize">{activeTool}</span>
+        <span className="mx-2">|</span>
+        <span>Ansicht: {viewMode === '2d' ? '2D' : viewMode === '3d' ? '3D' : 'Split'}</span>
         <span className="ml-auto">
-          A = Auswahl, W = Wand, T = Tür, F = Fenster, S = Säule, B = Boden, K = Theke, G = Raster, Esc = Abbrechen
+          A = Auswahl, W = Wand, T = Tür, F = Fenster, S = Säule, Shift+S = Treppe, B = Boden, K = Theke, V = Split, Esc = Abbrechen
         </span>
       </footer>
 

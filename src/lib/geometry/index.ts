@@ -21,6 +21,25 @@ export {
   getSnapCandidates,
   // Element utilities
   getElementCenter,
+  // Wall geometry utilities (DRY)
+  calculateWallGeometry,
+  getPointOnWall,
 } from './math';
 
-export type { SnapCandidate } from './math';
+export type { SnapCandidate, WallGeometry } from './math';
+
+// Dimension calculations
+export {
+  calculateWallLength,
+  calculatePolygonArea,
+  calculatePolygonPerimeter,
+  calculatePolygonCentroid,
+  calculateWallDimensionPosition,
+  formatDimensionValue,
+  generateWallLengthDimension,
+  generateSpaceAreaDimension,
+  generateElementDimensions,
+  generateAllDimensions,
+  calculateDimensionLinePoints,
+  normalizeTextRotation,
+} from './dimensions';

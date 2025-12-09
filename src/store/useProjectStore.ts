@@ -31,6 +31,14 @@ interface ProjectActions {
   removeStorey: (id: string) => void;
   setActiveStorey: (id: string | null) => void;
 
+  // Import
+  importProject: (
+    project: ProjectInfo,
+    site: SiteInfo,
+    building: BuildingInfo,
+    storeys: StoreyInfo[]
+  ) => void;
+
   // Utility
   resetProject: () => void;
 }
@@ -148,6 +156,16 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         }),
 
       setActiveStorey: (id) => set({ activeStoreyId: id }),
+
+      // Import
+      importProject: (project, site, building, storeys) =>
+        set({
+          project,
+          site,
+          building,
+          storeys,
+          activeStoreyId: storeys[0]?.id ?? null,
+        }),
 
       // Utility
       resetProject: () => set(createDefaultProject()),

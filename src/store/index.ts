@@ -5,3 +5,5 @@ export { useSelectionStore } from './useSelectionStore';
 export { useToolStore } from './useToolStore';
 export { useViewStore } from './useViewStore';
 export { usePdfUnderlayStore, pdfToWorld } from './usePdfUnderlayStore';
+export { useMeasurementStore } from './useMeasurementStore';
+export type { Measurement, MeasurementPlacementState } from './useMeasurementStore';

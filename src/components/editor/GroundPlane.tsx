@@ -5,7 +5,10 @@ import { useWindowPlacement } from '@/hooks/useWindowPlacement';
 import { useColumnPlacement } from '@/hooks/useColumnPlacement';
 import { useCounterPlacement } from '@/hooks/useCounterPlacement';
 import { useAssetPlacement } from '@/hooks/useAssetPlacement';
-import { useToolStore } from '@/store';
+import { useSpacePlacement } from '@/hooks/useSpacePlacement';
+import { useStairPlacement } from '@/hooks/useStairPlacement';
+import { useMeasurement } from '@/hooks/useMeasurement';
+import { useToolStore, useProjectStore } from '@/store';
 import type { ThreeEvent } from '@react-three/fiber';
 
 /**
@@ -13,6 +16,7 @@ import type { ThreeEvent } from '@react-three/fiber';
  */
 export function GroundPlane() {
   const { activeTool } = useToolStore();
+  const { activeStoreyId, storeys } = useProjectStore();
   const wallPlacement = useWallPlacement();
   const slabPlacement = useSlabPlacement();
   const doorPlacement = useDoorPlacement();
@@ -20,6 +24,13 @@ export function GroundPlane() {
   const columnPlacement = useColumnPlacement();
   const counterPlacement = useCounterPlacement();
   const assetPlacement = useAssetPlacement();
+  const spacePlacement = useSpacePlacement();
+  const stairPlacement = useStairPlacement();
+  const measurePlacement = useMeasurement();
+
+  // Get storey elevation for plane position
+  const activeStorey = storeys.find(s => s.id === activeStoreyId);
+  const storeyElevation = activeStorey?.elevation ?? 0;
 
   // Only show interactive plane when placing elements
   const isPlacing =
@@ -29,7 +40,11 @@ export function GroundPlane() {
     activeTool === 'column' ||
     activeTool === 'slab' ||
     activeTool === 'counter' ||
-    activeTool === 'asset';
+    activeTool === 'asset' ||
+    activeTool === 'space-detect' ||
+    activeTool === 'space-draw' ||
+    activeTool === 'stair' ||
+    activeTool === 'measure';
 
   // Route events based on active tool
   const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
@@ -47,6 +62,12 @@ export function GroundPlane() {
       counterPlacement.handlePointerDown(event);
     } else if (activeTool === 'asset') {
       assetPlacement.handlePointerDown(event);
+    } else if (activeTool === 'space-detect' || activeTool === 'space-draw') {
+      spacePlacement.handlePointerDown(event);
+    } else if (activeTool === 'stair') {
+      stairPlacement.handlePointerDown(event);
+    } else if (activeTool === 'measure') {
+      measurePlacement.handlePointerDown(event);
     }
   };
 
@@ -65,18 +86,28 @@ export function GroundPlane() {
       counterPlacement.handlePointerMove(event);
     } else if (activeTool === 'asset') {
       assetPlacement.handlePointerMove(event);
+    } else if (activeTool === 'space-draw') {
+      spacePlacement.handlePointerMove(event);
+    } else if (activeTool === 'stair') {
+      stairPlacement.handlePointerMove(event);
+    } else if (activeTool === 'measure') {
+      measurePlacement.handlePointerMove(event);
     }
   };
 
   const handleDoubleClick = (event: ThreeEvent<MouseEvent>) => {
     if (activeTool === 'slab') {
       slabPlacement.handleDoubleClick(event);
+    } else if (activeTool === 'space-draw') {
+      spacePlacement.handleDoubleClick(event);
     }
   };
 
   const handleContextMenu = (event: ThreeEvent<MouseEvent>) => {
     if (activeTool === 'counter') {
       counterPlacement.handleContextMenu(event);
+    } else if (activeTool === 'measure') {
+      measurePlacement.handleContextMenu(event);
     }
   };
 
@@ -97,7 +128,7 @@ export function GroundPlane() {
       {/* Shadow receiving plane - always visible (Z-up: XY plane is horizontal) */}
       <mesh
         rotation={[0, 0, 0]}
-        position={[0, 0, -0.01]}
+        position={[0, 0, storeyElevation - 0.01]}
         receiveShadow
       >
         <planeGeometry args={[100, 100]} />
@@ -108,7 +139,7 @@ export function GroundPlane() {
       {isPlacing && (
         <mesh
           rotation={[0, 0, 0]}
-          position={[0, 0, 0]}
+          position={[0, 0, storeyElevation]}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerLeave={handlePointerLeave}

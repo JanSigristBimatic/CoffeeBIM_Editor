@@ -6,3 +6,7 @@ export { WindowMesh } from './WindowMesh';
 export { ColumnMesh } from './ColumnMesh';
 export { CounterMesh } from './CounterMesh';
 export { FurnitureMesh } from './FurnitureMesh';
+export { SpaceMesh, SpaceLabel } from './SpaceMesh';
+export { StairMesh, StairPreviewMesh } from './StairMesh';
+export { DimensionLabel, DimensionLine3D } from './DimensionLabel';
+export { MeasurementMesh, PreviewMeasurement } from './MeasurementMesh';

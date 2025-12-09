@@ -13,6 +13,7 @@ export type ColumnProfileType = 'rectangular' | 'circular';
 export interface CreateColumnParams {
   position: Point2D;
   storeyId: string;
+  elevation?: number; // Storey elevation (Z position)
   profileType?: ColumnProfileType;
   width?: number;
   depth?: number;
@@ -75,6 +76,7 @@ export function createColumn(params: CreateColumnParams): BimElement {
   const {
     position,
     storeyId,
+    elevation = 0,
     profileType = 'rectangular',
     width = DEFAULT_COLUMN_WIDTH,
     depth = DEFAULT_COLUMN_DEPTH,
@@ -108,8 +110,8 @@ export function createColumn(params: CreateColumnParams): BimElement {
       direction: { x: 0, y: 0, z: 1 }, // Extrude upward (Z-up)
     },
     placement: {
-      // Z-up coordinate system: 2D (x,y) → 3D (x, y, 0)
-      position: { x: position.x, y: position.y, z: 0 },
+      // Z-up coordinate system: 2D (x,y) → 3D (x, y, elevation)
+      position: { x: position.x, y: position.y, z: elevation },
       rotation: { x: 0, y: 0, z: 0, w: 1 },
     },
     properties: [

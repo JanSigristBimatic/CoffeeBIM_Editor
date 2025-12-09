@@ -1,6 +1,8 @@
 export { CameraController } from './CameraController';
+export { Canvas2D } from './Canvas2D';
 export { Canvas3D } from './Canvas3D';
 export { ColumnPreview } from './ColumnPreview';
+export { SplitView } from './SplitView';
 export { CounterPreview } from './CounterPreview';
 export { DistanceInputOverlay } from './DistanceInputOverlay';
 export { DoorPreview } from './DoorPreview';

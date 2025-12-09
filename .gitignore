@@ -15,8 +15,10 @@ node_modules
 # Build
 dist
 dist-ssr
+dist-node
 *.local
 build
+nul
 
 # Editor
 .vscode/*

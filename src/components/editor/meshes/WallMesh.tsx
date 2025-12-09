@@ -2,15 +2,19 @@ import { useMemo, useRef } from 'react';
 import { Mesh, Shape, Path, ExtrudeGeometry, MeshStandardMaterial, Euler } from 'three';
 import type { BimElement, Opening } from '@/types/bim';
 import { useDragElement } from '../TransformGizmo';
+import { calculateWallGeometry } from '@/lib/geometry';
 
 interface WallMeshProps {
   element: BimElement;
   selected: boolean;
+  isGhost?: boolean;
+  ghostOpacity?: number;
 }
 
 // Material colors
 const WALL_COLOR = '#e0e0e0';
 const WALL_COLOR_SELECTED = '#90caf9';
+const GHOST_COLOR = '#9e9e9e';
 
 /**
  * Create a hole path for an opening in the wall shape
@@ -46,9 +50,12 @@ function createOpeningHole(opening: Opening, wallLength: number, wallHeight: num
   return hole;
 }
 
-export function WallMesh({ element, selected }: WallMeshProps) {
+export function WallMesh({ element, selected, isGhost = false, ghostOpacity = 0.25 }: WallMeshProps) {
   const meshRef = useRef<Mesh>(null);
   const { handlers } = useDragElement(element);
+
+  // Disable interaction for ghost elements
+  const effectiveHandlers = isGhost ? {} : handlers;
 
   const { wallData } = element;
 
@@ -58,12 +65,11 @@ export function WallMesh({ element, selected }: WallMeshProps) {
 
     const { startPoint, endPoint, thickness, height, openings } = wallData;
 
-    // Calculate wall direction and length
-    const dx = endPoint.x - startPoint.x;
-    const dy = endPoint.y - startPoint.y;
-    const length = Math.sqrt(dx * dx + dy * dy);
+    // Calculate wall geometry using centralized utility
+    const wallGeo = calculateWallGeometry(startPoint, endPoint);
 
-    if (length < 0.01) return null; // Skip very short walls
+    if (wallGeo.length < 0.01) return null; // Skip very short walls
+    const length = wallGeo.length;
 
     const halfThickness = thickness / 2;
 
@@ -96,29 +102,37 @@ export function WallMesh({ element, selected }: WallMeshProps) {
       bevelEnabled: false,
     };
 
-    const geo = new ExtrudeGeometry(shape, extrudeSettings);
+    const extrudeGeo = new ExtrudeGeometry(shape, extrudeSettings);
 
     // Center the geometry on thickness (so wall centerline is at Z=0 in local space)
-    geo.translate(0, 0, -halfThickness);
+    extrudeGeo.translate(0, 0, -halfThickness);
 
-    return geo;
+    return extrudeGeo;
   }, [wallData]);
 
   // Create material
   const material = useMemo(() => {
+    if (isGhost) {
+      return new MeshStandardMaterial({
+        color: GHOST_COLOR,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: ghostOpacity,
+        depthWrite: false,
+      });
+    }
     return new MeshStandardMaterial({
       color: selected ? WALL_COLOR_SELECTED : WALL_COLOR,
       roughness: 0.8,
       metalness: 0.1,
     });
-  }, [selected]);
+  }, [selected, isGhost, ghostOpacity]);
 
   // Calculate rotation from wall direction (Z-up system)
   const rotation = useMemo(() => {
     if (!wallData) return new Euler(0, 0, 0);
-    const dx = wallData.endPoint.x - wallData.startPoint.x;
-    const dy = wallData.endPoint.y - wallData.startPoint.y;
-    const angle = Math.atan2(dy, dx);
+    const { angle } = calculateWallGeometry(wallData.startPoint, wallData.endPoint);
     // Wall is built in XY plane (X=length, Y=height), extruded along Z (thickness)
     // For Z-up: First rotate around world-Z for direction, then rotate +90° around X so Y (height) → Z (up)
     // Order 'ZXY' ensures angle is applied in world coordinates before the tilt
@@ -132,11 +146,12 @@ export function WallMesh({ element, selected }: WallMeshProps) {
       ref={meshRef}
       geometry={geometry}
       material={material}
-      position={[wallData.startPoint.x, wallData.startPoint.y, 0]}
+      position={[wallData.startPoint.x, wallData.startPoint.y, element.placement.position.z]}
       rotation={rotation}
-      {...handlers}
-      castShadow
-      receiveShadow
+      {...effectiveHandlers}
+      castShadow={!isGhost}
+      receiveShadow={!isGhost}
+      renderOrder={isGhost ? -1 : 0}
     />
   );
 }

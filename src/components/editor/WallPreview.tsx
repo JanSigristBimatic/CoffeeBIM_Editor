@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { Html } from '@react-three/drei';
 import { useToolStore } from '@/store';
+import { useStoreyElevation } from '@/hooks';
 import { DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT } from '@/bim/elements/Wall';
 
 /**
@@ -12,6 +13,7 @@ import { DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT } from '@/bim/elements/Wall
 export function WallPreview() {
   const { activeTool, wallPlacement, distanceInput } = useToolStore();
   const { startPoint, previewEndPoint } = wallPlacement;
+  const storeyElevation = useStoreyElevation();
 
   // Only show preview when placing a wall and we have both points
   const isVisible = activeTool === 'wall' && startPoint !== null && previewEndPoint !== null;
@@ -59,13 +61,13 @@ export function WallPreview() {
     const angle = Math.atan2(dy, dx);
 
     return {
-      // Z-up: (x, y, 0) for ground position
-      position: new THREE.Vector3(startPoint.x, startPoint.y, 0),
+      // Z-up: (x, y, storeyElevation) for position on active storey
+      position: new THREE.Vector3(startPoint.x, startPoint.y, storeyElevation),
       // Z-up: First rotate around world-Z for direction, then rotate +90° around X so Y (height) → Z (up)
       // Order 'ZXY' ensures angle is applied in world coordinates before the tilt
       rotation: new THREE.Euler(Math.PI / 2, 0, angle, 'ZXY'),
     };
-  }, [startPoint, previewEndPoint]);
+  }, [startPoint, previewEndPoint, storeyElevation]);
 
   // Calculate distance and midpoint for label
   const labelData = useMemo(() => {
@@ -106,7 +108,7 @@ export function WallPreview() {
       {/* Distance label at midpoint */}
       {labelData && (
         <Html
-          position={[labelData.midpoint.x, labelData.midpoint.y, DEFAULT_WALL_HEIGHT + 0.3]}
+          position={[labelData.midpoint.x, labelData.midpoint.y, storeyElevation + DEFAULT_WALL_HEIGHT + 0.3]}
           center
           style={{ pointerEvents: 'none' }}
         >

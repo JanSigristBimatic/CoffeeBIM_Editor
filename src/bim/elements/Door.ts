@@ -247,6 +247,8 @@ export function updateOpeningFromDoor(opening: Opening, door: BimElement): Openi
 
 /**
  * Calculate the world position of a door given its host wall
+ * Z-up coordinate system: 2D (x,y) → 3D (x, y, z)
+ * The Z position comes from the wall's placement (storey elevation)
  */
 export function calculateDoorWorldPosition(
   door: BimElement,
@@ -257,16 +259,19 @@ export function calculateDoorWorldPosition(
   const { startPoint, endPoint } = wall.wallData;
   const { positionOnWall } = door.doorData;
 
-  // Calculate position along wall
+  // Calculate position along wall in XY plane
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
 
-  // Z-up coordinate system: 2D (x,y) → 3D (x, y, 0)
+  // Z-up: x stays x, y stays y
   const x = startPoint.x + dx * positionOnWall;
   const y = startPoint.y + dy * positionOnWall;
 
-  // Calculate wall angle
+  // Z comes from wall's storey elevation
+  const z = wall.placement.position.z;
+
+  // Calculate wall angle (rotation around Z axis)
   const angle = Math.atan2(dy, dx);
 
-  return { x, y, z: 0, angle };
+  return { x, y, z, angle };
 }

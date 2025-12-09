@@ -104,7 +104,7 @@ export function FurnitureProperties({ element }: FurniturePropertiesProps) {
     [element, updateElement]
   );
 
-  // Update rotation (Y-axis only for simplicity)
+  // Update rotation (Z-axis for Z-up coordinate system)
   const handleRotationChange = useCallback(
     (degrees: number) => {
       const radians = (degrees * Math.PI) / 180;
@@ -114,8 +114,8 @@ export function FurnitureProperties({ element }: FurniturePropertiesProps) {
           ...element.placement,
           rotation: {
             x: 0,
-            y: Math.sin(radians / 2),
-            z: 0,
+            y: 0,
+            z: Math.sin(radians / 2),
             w: Math.cos(radians / 2),
           },
         },
@@ -124,14 +124,16 @@ export function FurnitureProperties({ element }: FurniturePropertiesProps) {
     [element, updateElement]
   );
 
-  // Calculate current Y rotation in degrees
+  // Calculate current Z rotation in degrees (Z-up coordinate system)
   const currentRotationDegrees = (() => {
     const { rotation } = element.placement;
-    // Extract Y rotation from quaternion
-    const sinHalfAngle = rotation.y;
+    // Extract Z rotation from quaternion
+    const sinHalfAngle = rotation.z;
     const cosHalfAngle = rotation.w;
     const radians = 2 * Math.atan2(sinHalfAngle, cosHalfAngle);
-    return (radians * 180) / Math.PI;
+    // Normalize to 0-360 range
+    const degrees = (radians * 180) / Math.PI;
+    return degrees < 0 ? degrees + 360 : degrees;
   })();
 
   if (!furnitureData) {
@@ -229,7 +231,7 @@ export function FurnitureProperties({ element }: FurniturePropertiesProps) {
 
       {/* Rotation */}
       <div>
-        <label className="text-xs text-muted-foreground block mb-1">Rotation (Y-Achse)</label>
+        <label className="text-xs text-muted-foreground block mb-1">Rotation (Z-Achse)</label>
         <div className="flex items-center gap-2">
           <input
             type="range"

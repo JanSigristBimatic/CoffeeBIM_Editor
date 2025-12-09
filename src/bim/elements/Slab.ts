@@ -9,6 +9,7 @@ export interface CreateSlabParams {
   storeyId: string;
   slabType?: 'floor' | 'ceiling';
   thickness?: number;
+  elevation?: number; // Storey elevation (Z position)
   name?: string;
 }
 
@@ -22,6 +23,7 @@ export function createSlab(params: CreateSlabParams): BimElement {
     storeyId,
     slabType = 'floor',
     thickness = DEFAULT_SLAB_THICKNESS,
+    elevation = 0,
     name,
   } = params;
 
@@ -56,8 +58,8 @@ export function createSlab(params: CreateSlabParams): BimElement {
       direction: { x: 0, y: 0, z: 1 }, // Extrude upward (Z-up)
     },
     placement: {
-      // Z-up coordinate system: 2D (x,y) → 3D (x, y, 0)
-      position: { x: centroid.x, y: centroid.y, z: 0 },
+      // Z-up coordinate system: 2D (x,y) → 3D (x, y, elevation)
+      position: { x: centroid.x, y: centroid.y, z: elevation },
       rotation: { x: 0, y: 0, z: 0, w: 1 },
     },
     properties: [

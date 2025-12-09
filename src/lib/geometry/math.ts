@@ -112,6 +112,56 @@ export function angleBetweenPoints(from: Point2D, to: Point2D): number {
   return Math.atan2(to.y - from.y, to.x - from.x);
 }
 
+// ============================================================================
+// Wall Geometry Utilities (DRY - centralized calculations)
+// ============================================================================
+
+/**
+ * Wall geometry calculation result
+ * Contains all commonly needed wall metrics in one call
+ */
+export interface WallGeometry {
+  /** Length of the wall in meters */
+  length: number;
+  /** Direction vector (normalized) */
+  direction: Point2D;
+  /** Angle in radians (for rotation) */
+  angle: number;
+  /** Delta X component */
+  dx: number;
+  /** Delta Y component */
+  dy: number;
+}
+
+/**
+ * Calculate wall geometry from start and end points
+ * Centralizes the commonly duplicated wall calculations
+ */
+export function calculateWallGeometry(startPoint: Point2D, endPoint: Point2D): WallGeometry {
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx);
+
+  return {
+    length,
+    direction: length > 0 ? { x: dx / length, y: dy / length } : { x: 1, y: 0 },
+    angle,
+    dx,
+    dy,
+  };
+}
+
+/**
+ * Calculate position along a wall given a parameter t (0-1)
+ */
+export function getPointOnWall(startPoint: Point2D, endPoint: Point2D, t: number): Point2D {
+  return {
+    x: startPoint.x + (endPoint.x - startPoint.x) * t,
+    y: startPoint.y + (endPoint.y - startPoint.y) * t,
+  };
+}
+
 /**
  * Normalize an angle to be between -PI and PI
  */

@@ -44,6 +44,11 @@ export function useWallPlacement() {
     [snapFromEvent]
   );
 
+  // Get storey elevation for Z position
+  const { storeys } = useProjectStore();
+  const activeStorey = storeys.find(s => s.id === activeStoreyId);
+  const storeyElevation = activeStorey?.elevation ?? 0;
+
   /**
    * Create a wall from start point to end point
    */
@@ -59,6 +64,7 @@ export function useWallPlacement() {
           startPoint,
           endPoint,
           storeyId: activeStoreyId,
+          elevation: storeyElevation,
         });
 
         addElement(wall);
@@ -68,7 +74,7 @@ export function useWallPlacement() {
         return false;
       }
     },
-    [activeStoreyId, addElement]
+    [activeStoreyId, storeyElevation, addElement]
   );
 
   /**

@@ -15,12 +15,15 @@ import type {
   CounterPlacementParams,
   AssetPlacementState,
   AssetPlacementParams,
+  SpacePlacementState,
+  StairPlacementState,
+  StairPlacementParams,
   CursorStyle,
   DistanceInputState,
 } from '@/types/tools';
 import type { Vector2D } from '@/types/geometry';
 import type { Point2D } from '@/types/geometry';
-import type { DoorType, WindowType, CounterType } from '@/types/bim';
+import type { DoorType, WindowType, CounterType, StairType } from '@/types/bim';
 import {
   DEFAULT_DOOR_WIDTH,
   DEFAULT_DOOR_HEIGHT,
@@ -40,6 +43,7 @@ import {
   DEFAULT_COUNTER_KICK_HEIGHT,
   DEFAULT_COUNTER_KICK_RECESS,
   DEFAULT_COUNTER_FOOTREST_HEIGHT,
+  DEFAULT_STAIR_WIDTH,
 } from '@/types/bim';
 
 interface ToolState {
@@ -56,6 +60,8 @@ interface ToolState {
   columnPlacement: ColumnPlacementState;
   counterPlacement: CounterPlacementState;
   assetPlacement: AssetPlacementState;
+  spacePlacement: SpacePlacementState;
+  stairPlacement: StairPlacementState;
 }
 
 interface ToolActions {
@@ -148,6 +154,23 @@ interface ToolActions {
   setAssetRotation: (rotation: number) => void;
   setAssetPreview: (position: Point2D | null, isValid: boolean) => void;
   resetAssetPlacement: () => void;
+
+  // Space placement (for manual polygon drawing)
+  addSpacePoint: (point: Point2D) => void;
+  setSpacePreviewPoint: (point: Point2D | null) => void;
+  resetSpacePlacement: () => void;
+  finishSpacePlacement: () => Point2D[];
+
+  // Stair placement
+  setStairParams: (params: Partial<StairPlacementParams>) => void;
+  setStairType: (stairType: StairType) => void;
+  setStairWidth: (width: number) => void;
+  setStairTargetStorey: (storeyId: string | null) => void;
+  setStairCreateOpening: (createOpening: boolean) => void;
+  setStairStartPoint: (point: Point2D | null) => void;
+  setStairPreviewEndPoint: (point: Point2D | null) => void;
+  setStairRotation: (rotation: number) => void;
+  resetStairPlacement: () => void;
 
   // Utility
   getCursorStyle: () => CursorStyle;
@@ -298,6 +321,27 @@ const initialAssetPlacement: AssetPlacementState = {
   isValidPosition: true,
 };
 
+const initialSpacePlacement: SpacePlacementState = {
+  points: [],
+  previewPoint: null,
+  isDrawing: false,
+};
+
+const initialStairPlacementParams: StairPlacementParams = {
+  stairType: 'straight',
+  width: DEFAULT_STAIR_WIDTH,
+  targetStoreyId: null,
+  createOpening: true,
+};
+
+const initialStairPlacement: StairPlacementState = {
+  params: initialStairPlacementParams,
+  startPoint: null,
+  previewEndPoint: null,
+  isPlacing: false,
+  rotation: 0,
+};
+
 export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
   activeTool: 'select',
   cursorPosition: null,
@@ -310,6 +354,8 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
   columnPlacement: initialColumnPlacement,
   counterPlacement: initialCounterPlacement,
   assetPlacement: initialAssetPlacement,
+  spacePlacement: initialSpacePlacement,
+  stairPlacement: initialStairPlacement,
 
   // Tool selection
   setActiveTool: (tool) =>
@@ -320,6 +366,7 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
       distanceInput: initialDistanceInput,
       wallPlacement: initialWallPlacement,
       slabPlacement: initialSlabPlacement,
+      spacePlacement: initialSpacePlacement,
       doorPlacement: {
         ...initialDoorPlacement,
         // Keep door params when switching tools
@@ -344,6 +391,11 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
         ...initialAssetPlacement,
         // Keep asset params when switching tools
         params: get().assetPlacement.params,
+      },
+      stairPlacement: {
+        ...initialStairPlacement,
+        // Keep stair params when switching tools
+        params: get().stairPlacement.params,
       },
     }),
 
@@ -894,6 +946,126 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
       },
     })),
 
+  // Space placement (for manual polygon drawing)
+  addSpacePoint: (point) =>
+    set((state) => ({
+      spacePlacement: {
+        ...state.spacePlacement,
+        points: [...state.spacePlacement.points, point],
+        isDrawing: true,
+      },
+    })),
+
+  setSpacePreviewPoint: (point) =>
+    set((state) => ({
+      spacePlacement: {
+        ...state.spacePlacement,
+        previewPoint: point,
+      },
+    })),
+
+  resetSpacePlacement: () =>
+    set({
+      spacePlacement: initialSpacePlacement,
+    }),
+
+  finishSpacePlacement: () => {
+    const { spacePlacement } = get();
+    const points = [...spacePlacement.points];
+    set({ spacePlacement: initialSpacePlacement });
+    return points;
+  },
+
+  // Stair placement
+  setStairParams: (params) =>
+    set((state) => ({
+      stairPlacement: {
+        ...state.stairPlacement,
+        params: {
+          ...state.stairPlacement.params,
+          ...params,
+        },
+      },
+    })),
+
+  setStairType: (stairType) =>
+    set((state) => ({
+      stairPlacement: {
+        ...state.stairPlacement,
+        params: {
+          ...state.stairPlacement.params,
+          stairType,
+        },
+      },
+    })),
+
+  setStairWidth: (width) =>
+    set((state) => ({
+      stairPlacement: {
+        ...state.stairPlacement,
+        params: {
+          ...state.stairPlacement.params,
+          width,
+        },
+      },
+    })),
+
+  setStairTargetStorey: (storeyId) =>
+    set((state) => ({
+      stairPlacement: {
+        ...state.stairPlacement,
+        params: {
+          ...state.stairPlacement.params,
+          targetStoreyId: storeyId,
+        },
+      },
+    })),
+
+  setStairCreateOpening: (createOpening) =>
+    set((state) => ({
+      stairPlacement: {
+        ...state.stairPlacement,
+        params: {
+          ...state.stairPlacement.params,
+          createOpening,
+        },
+      },
+    })),
+
+  setStairStartPoint: (point) =>
+    set((state) => ({
+      stairPlacement: {
+        ...state.stairPlacement,
+        startPoint: point,
+        isPlacing: point !== null,
+      },
+    })),
+
+  setStairPreviewEndPoint: (point) =>
+    set((state) => ({
+      stairPlacement: {
+        ...state.stairPlacement,
+        previewEndPoint: point,
+      },
+    })),
+
+  setStairRotation: (rotation) =>
+    set((state) => ({
+      stairPlacement: {
+        ...state.stairPlacement,
+        rotation,
+      },
+    })),
+
+  resetStairPlacement: () =>
+    set((state) => ({
+      stairPlacement: {
+        ...initialStairPlacement,
+        // Keep stair params
+        params: state.stairPlacement.params,
+      },
+    })),
+
   // Utility
   getCursorStyle: () => {
     const { activeTool } = get();
@@ -908,6 +1080,9 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
       case 'slab':
       case 'counter':
       case 'asset':
+      case 'space-detect':
+      case 'space-draw':
+      case 'stair':
         return 'crosshair';
       case 'pan':
         return 'grab';
@@ -919,7 +1094,7 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
   },
 
   cancelCurrentOperation: () => {
-    const { activeTool, doorPlacement, windowPlacement, columnPlacement, counterPlacement, assetPlacement } = get();
+    const { activeTool, doorPlacement, windowPlacement, columnPlacement, counterPlacement, assetPlacement, stairPlacement } = get();
 
     // Always clear distance input when cancelling
     set({ distanceInput: initialDistanceInput });
@@ -929,6 +1104,9 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
     }
     if (activeTool === 'slab') {
       set({ slabPlacement: initialSlabPlacement });
+    }
+    if (activeTool === 'space-draw') {
+      set({ spacePlacement: initialSpacePlacement });
     }
     if (activeTool === 'door') {
       set({
@@ -967,6 +1145,14 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
         assetPlacement: {
           ...initialAssetPlacement,
           params: assetPlacement.params,
+        },
+      });
+    }
+    if (activeTool === 'stair') {
+      set({
+        stairPlacement: {
+          ...initialStairPlacement,
+          params: stairPlacement.params,
         },
       });
     }

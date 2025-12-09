@@ -1,5 +1,5 @@
 import type { Point2D, Vector2D } from './geometry';
-import type { DoorType, WindowType, CounterType } from './bim';
+import type { DoorType, WindowType, CounterType, StairType } from './bim';
 
 /**
  * Available tool types in the editor
@@ -13,14 +13,21 @@ export type ToolType =
   | 'slab'
   | 'furniture'
   | 'counter'
+  | 'stair'
   | 'asset'
+  | 'space-detect'
+  | 'space-draw'
+  | 'measure'
   | 'pan'
   | 'orbit';
 
 /**
  * View mode for the editor
+ * - '2d': Only 2D CAD view
+ * - '3d': Only 3D view
+ * - 'split': Vertical split with 2D left, 3D right
  */
-export type ViewMode = '2d' | '3d';
+export type ViewMode = '2d' | '3d' | 'split';
 
 /**
  * State for wall placement tool
@@ -215,4 +222,47 @@ export interface DistanceInputState {
   direction: Vector2D | null;
   /** Reference point (start point) for distance calculation */
   referencePoint: Point2D | null;
+}
+
+/**
+ * State for space placement (polygon drawing mode)
+ */
+export interface SpacePlacementState {
+  /** Points already placed for manual polygon drawing */
+  points: Point2D[];
+  /** Current cursor position for preview */
+  previewPoint: Point2D | null;
+  /** Whether we're actively drawing a polygon */
+  isDrawing: boolean;
+}
+
+/**
+ * Stair placement parameters (configurable before placement)
+ */
+export interface StairPlacementParams {
+  /** Type of stair */
+  stairType: StairType;
+  /** Stair width in meters */
+  width: number;
+  /** Target storey ID (where stair leads to) */
+  targetStoreyId: string | null;
+  /** Whether to auto-create floor opening */
+  createOpening: boolean;
+}
+
+/**
+ * State for stair placement tool with preview
+ * Two-click placement: first click = start position, second click = direction
+ */
+export interface StairPlacementState {
+  /** Current stair parameters */
+  params: StairPlacementParams;
+  /** Start point (foot of stair) */
+  startPoint: Point2D | null;
+  /** Preview end point for direction */
+  previewEndPoint: Point2D | null;
+  /** Whether we're currently placing */
+  isPlacing: boolean;
+  /** Calculated rotation based on direction */
+  rotation: number;
 }

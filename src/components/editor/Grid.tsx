@@ -1,9 +1,14 @@
 import { useMemo } from 'react';
-import { useViewStore } from '@/store';
+import { useViewStore, useProjectStore } from '@/store';
 import * as THREE from 'three';
 
 export function Grid() {
   const { gridSize } = useViewStore();
+  const { activeStoreyId, storeys } = useProjectStore();
+
+  // Get storey elevation for grid position
+  const activeStorey = storeys.find(s => s.id === activeStoreyId);
+  const storeyElevation = activeStorey?.elevation ?? 0;
 
   // Create grid lines in XY plane (Z-up coordinate system)
   const gridLines = useMemo(() => {
@@ -41,22 +46,24 @@ export function Grid() {
   }, [gridSize]);
 
   return (
-    <lineSegments>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          array={gridLines.vertices}
-          count={gridLines.vertices.length / 3}
-          itemSize={3}
-        />
-        <bufferAttribute
-          attach="attributes-color"
-          array={gridLines.colors}
-          count={gridLines.colors.length / 3}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <lineBasicMaterial vertexColors transparent opacity={0.5} />
-    </lineSegments>
+    <group position={[0, 0, storeyElevation]}>
+      <lineSegments>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            array={gridLines.vertices}
+            count={gridLines.vertices.length / 3}
+            itemSize={3}
+          />
+          <bufferAttribute
+            attach="attributes-color"
+            array={gridLines.colors}
+            count={gridLines.colors.length / 3}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial vertexColors transparent opacity={0.5} />
+      </lineSegments>
+    </group>
   );
 }

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Shape, ExtrudeGeometry, CylinderGeometry } from 'three';
 import { useToolStore } from '@/store';
+import { useStoreyElevation } from '@/hooks';
 import { usePreviewMaterial, getPreviewColor } from '@/components/three';
 
 /**
@@ -9,6 +10,7 @@ import { usePreviewMaterial, getPreviewColor } from '@/components/three';
  */
 export function ColumnPreview() {
   const { activeTool, columnPlacement } = useToolStore();
+  const storeyElevation = useStoreyElevation();
 
   const { params, previewPosition, isValidPosition } = columnPlacement;
 
@@ -56,9 +58,9 @@ export function ColumnPreview() {
 
   return (
     <group renderOrder={999}>
-      {/* Column preview mesh (Z-up: x, y on ground, z is height) */}
+      {/* Column preview mesh (Z-up: x, y on ground, z is storey elevation + height offset) */}
       <mesh
-        position={[previewPosition.x, previewPosition.y, zOffset]}
+        position={[previewPosition.x, previewPosition.y, storeyElevation + zOffset]}
         geometry={geometry}
         material={previewMaterial}
         renderOrder={999}
@@ -66,7 +68,7 @@ export function ColumnPreview() {
 
       {/* Column outline */}
       <lineSegments
-        position={[previewPosition.x, previewPosition.y, zOffset]}
+        position={[previewPosition.x, previewPosition.y, storeyElevation + zOffset]}
         renderOrder={1000}
       >
         <edgesGeometry args={[geometry]} />
@@ -75,7 +77,7 @@ export function ColumnPreview() {
 
       {/* Ground marker (Z-up: no rotation needed for ring in XY plane) */}
       <mesh
-        position={[previewPosition.x, previewPosition.y, 0.01]}
+        position={[previewPosition.x, previewPosition.y, storeyElevation + 0.01]}
         renderOrder={1001}
       >
         <ringGeometry args={[params.width * 0.6, params.width * 0.7, 32]} />

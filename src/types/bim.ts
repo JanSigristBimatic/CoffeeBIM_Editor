@@ -3,7 +3,7 @@ import type { Point2D, Vector3, Quaternion } from './geometry';
 /**
  * Element types supported by the editor
  */
-export type ElementType = 'wall' | 'door' | 'window' | 'column' | 'slab' | 'furniture' | 'counter';
+export type ElementType = 'wall' | 'door' | 'window' | 'column' | 'slab' | 'furniture' | 'counter' | 'space' | 'stair';
 
 /**
  * IFC-compatible property set
@@ -426,6 +426,162 @@ export interface CounterData {
 }
 
 /**
+ * Stair type enumeration
+ */
+export type StairType = 'straight' | 'l-shape' | 'u-shape';
+
+/**
+ * Calculated step dimensions based on total rise
+ */
+export interface StepCalculation {
+  /** Number of risers (steps) */
+  count: number;
+  /** Riser height in meters (Steigung) */
+  riserHeight: number;
+  /** Tread depth in meters (Auftritt) */
+  treadDepth: number;
+  /** Total run length in meters (Lauflange) */
+  runLength: number;
+}
+
+/**
+ * Stair-specific data (IfcStair)
+ */
+export interface StairData {
+  /** Type of stair */
+  stairType: StairType;
+
+  /** Stair width in meters (0.8 - 1.5m typical) */
+  width: number;
+
+  /** Total rise from bottom to top storey in meters */
+  totalRise: number;
+
+  /** ID of the bottom storey (where stair starts) */
+  bottomStoreyId: string;
+
+  /** ID of the top storey (where stair ends) */
+  topStoreyId: string;
+
+  /** Calculated step dimensions */
+  steps: StepCalculation;
+
+  /** Rotation angle in radians (direction of travel) */
+  rotation: number;
+
+  /** Whether to auto-create floor opening in top storey */
+  createOpening: boolean;
+
+  /** ID of the created opening element (if any) */
+  openingId?: string;
+}
+
+/**
+ * IFC Space type enumeration
+ */
+export type SpaceType = 'INTERNAL' | 'EXTERNAL' | 'NOTDEFINED';
+
+/**
+ * Gastro-spezifische Raumkategorien
+ * Wird in IfcSpace.ObjectType gespeichert
+ */
+export type GastroSpaceCategory =
+  | 'GASTRAUM'      // Gästebereich, Sitzplätze
+  | 'BAR'           // Theken-/Barbereich
+  | 'KUECHE'        // Küche, Zubereitung
+  | 'LAGER'         // Lagerraum
+  | 'SANITAER'      // WC, Waschraum
+  | 'PERSONAL'      // Personalraum, Büro
+  | 'EINGANG'       // Eingangsbereich, Windfang
+  | 'TERRASSE'      // Aussensitzbereich
+  | 'TECHNIK'       // Technikraum, Heizung
+  | 'SONSTIGES';    // Nicht kategorisiert
+
+/**
+ * German labels for Gastro Space Categories
+ */
+export const GASTRO_SPACE_LABELS: Record<GastroSpaceCategory, string> = {
+  GASTRAUM: 'Gastraum',
+  BAR: 'Bar / Theke',
+  KUECHE: 'Küche',
+  LAGER: 'Lager',
+  SANITAER: 'Sanitär / WC',
+  PERSONAL: 'Personal / Büro',
+  EINGANG: 'Eingang',
+  TERRASSE: 'Terrasse',
+  TECHNIK: 'Technik',
+  SONSTIGES: 'Sonstiges',
+};
+
+/**
+ * Colors for 3D visualization of Gastro Space Categories
+ */
+export const GASTRO_SPACE_COLORS: Record<GastroSpaceCategory, string> = {
+  GASTRAUM: '#87CEEB',  // Hellblau - Gästebereich
+  BAR: '#DDA0DD',       // Pflaume - Bar/Theke
+  KUECHE: '#FFE4B5',    // Moccasin - Küche
+  LAGER: '#D2B48C',     // Tan - Lager
+  SANITAER: '#ADD8E6',  // Hellblau - Sanitär
+  PERSONAL: '#98FB98',  // Hellgrün - Personal
+  EINGANG: '#F5DEB3',   // Weizen - Eingang
+  TERRASSE: '#90EE90',  // Hellgrün - Terrasse (Aussen)
+  TECHNIK: '#A9A9A9',   // Dunkelgrau - Technik
+  SONSTIGES: '#D3D3D3', // Hellgrau - Sonstiges
+};
+
+/**
+ * Icon names for Gastro Space Categories (Lucide icons)
+ */
+export const GASTRO_SPACE_ICONS: Record<GastroSpaceCategory, string> = {
+  GASTRAUM: 'Armchair',
+  BAR: 'Coffee',
+  KUECHE: 'ChefHat',
+  LAGER: 'Package',
+  SANITAER: 'Bath',
+  PERSONAL: 'Briefcase',
+  EINGANG: 'DoorOpen',
+  TERRASSE: 'Sun',
+  TECHNIK: 'Settings',
+  SONSTIGES: 'HelpCircle',
+};
+
+/**
+ * Space-specific data (IfcSpace)
+ * Represents a bounded area within a building storey
+ */
+export interface SpaceData {
+  /** Closed boundary polygon defining the space outline (floor plan) */
+  boundaryPolygon: Point2D[];
+
+  /** Calculated floor area in square meters */
+  area: number;
+
+  /** Calculated perimeter in meters */
+  perimeter: number;
+
+  /** IFC space type classification */
+  spaceType: SpaceType;
+
+  /** Optional long/descriptive name (e.g., "Hauptgastraum mit Theke") */
+  longName?: string;
+
+  /** IDs of walls that bound this space */
+  boundingWallIds: string[];
+
+  /** Optional floor finish height offset */
+  floorFinishHeight?: number;
+
+  /** Optional net/clear height of the space */
+  netHeight?: number;
+
+  /** Whether this space was auto-detected or manually created */
+  autoDetected: boolean;
+
+  /** Gastro-specific room category (stored in IfcSpace.ObjectType) */
+  gastroCategory?: GastroSpaceCategory;
+}
+
+/**
  * Core BIM element interface
  * All elements in the model share this structure
  */
@@ -469,6 +625,8 @@ export interface BimElement {
   slabData?: SlabData;
   furnitureData?: FurnitureData;
   counterData?: CounterData;
+  spaceData?: SpaceData;
+  stairData?: StairData;
 }
 
 // ============================================
@@ -548,3 +706,20 @@ export const DEFAULT_COUNTER_OVERHANG = 0.1; // 10cm overhang
 export const DEFAULT_COUNTER_KICK_HEIGHT = 0.1; // 10cm
 export const DEFAULT_COUNTER_KICK_RECESS = 0.05; // 5cm
 export const DEFAULT_COUNTER_FOOTREST_HEIGHT = 0.2; // 20cm
+
+// Space defaults
+export const DEFAULT_SPACE_TYPE: SpaceType = 'INTERNAL';
+export const DEFAULT_GASTRO_CATEGORY: GastroSpaceCategory = 'SONSTIGES';
+/** Tolerance for connecting wall endpoints (in meters) */
+export const SPACE_DETECTION_TOLERANCE = 0.05; // 5cm
+
+// Stair defaults (DIN 18065 compliant)
+export const DEFAULT_STAIR_WIDTH = 1.0; // 1m standard width
+export const DEFAULT_STAIR_RISER_HEIGHT = 0.175; // 17.5cm ideal riser
+export const DEFAULT_STAIR_TREAD_DEPTH = 0.28; // 28cm ideal tread
+/** Schrittmassregel: 2h + a = 59-65cm (ideal: 63cm) */
+export const STAIR_STEP_SIZE_RULE = 0.63; // 63cm
+export const MIN_STAIR_RISER = 0.14; // 14cm minimum
+export const MAX_STAIR_RISER = 0.21; // 21cm maximum
+export const MIN_STAIR_TREAD = 0.21; // 21cm minimum
+export const MAX_STAIR_TREAD = 0.37; // 37cm maximum

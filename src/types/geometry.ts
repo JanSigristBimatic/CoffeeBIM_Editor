@@ -24,6 +24,11 @@ export interface Vector3 {
 }
 
 /**
+ * 3D point (alias for Vector3 for semantic clarity)
+ */
+export type Point3D = Vector3;
+
+/**
  * Quaternion for rotation
  */
 export interface Quaternion {

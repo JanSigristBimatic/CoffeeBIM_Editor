@@ -2,6 +2,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { Group, Box3, Vector3, MeshStandardMaterial, Mesh, DoubleSide } from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useToolStore } from '@/store';
+import { useStoreyElevation } from '@/hooks';
 import { getAssetById } from '@/lib/assets';
 import type { Point2D } from '@/types/geometry';
 
@@ -15,6 +16,7 @@ interface AssetPreviewProps {
  */
 export function AssetPreview({ position }: AssetPreviewProps) {
   const { assetPlacement } = useToolStore();
+  const storeyElevation = useStoreyElevation();
   const { assetId, scale, rotation } = assetPlacement.params;
 
   const asset = assetId ? getAssetById(assetId) : null;
@@ -27,7 +29,7 @@ export function AssetPreview({ position }: AssetPreviewProps) {
   const rotationRad = (rotation * Math.PI) / 180;
 
   return (
-    <group position={[position.x, position.y, 0]} rotation={[0, 0, rotationRad]}>
+    <group position={[position.x, position.y, storeyElevation]} rotation={[0, 0, rotationRad]}>
       <Suspense fallback={<PreviewFallback asset={asset} scale={scale} />}>
         <AssetModelPreview
           assetPath={asset.path}

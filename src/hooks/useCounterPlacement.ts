@@ -22,9 +22,13 @@ export function useCounterPlacement() {
     finishCounterPlacement,
     setCursorPosition,
   } = useToolStore();
-  const { activeStoreyId } = useProjectStore();
+  const { activeStoreyId, storeys } = useProjectStore();
   const { addElement } = useElementStore();
   const { snapFromEvent } = useSnap();
+
+  // Get storey elevation for Z position
+  const activeStorey = storeys.find(s => s.id === activeStoreyId);
+  const storeyElevation = activeStorey?.elevation ?? 0;
 
   // Use distance input hook
   const {
@@ -60,6 +64,7 @@ export function useCounterPlacement() {
     const counter = createCounter({
       path: points,
       storeyId: activeStoreyId,
+      elevation: storeyElevation,
       counterType: params.counterType,
       depth: params.depth,
       height: params.height,
@@ -72,7 +77,7 @@ export function useCounterPlacement() {
     });
 
     addElement(counter);
-  }, [activeStoreyId, counterPlacement, finishCounterPlacement, resetCounterPlacement, addElement]);
+  }, [activeStoreyId, storeyElevation, counterPlacement, finishCounterPlacement, resetCounterPlacement, addElement]);
 
   /**
    * Add a point to the counter path

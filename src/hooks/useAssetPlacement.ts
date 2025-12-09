@@ -12,12 +12,16 @@ import type { Point2D } from '@/types/geometry';
 export function useAssetPlacement() {
   const { assetPlacement, setAssetPreview } = useToolStore();
   const { addElement } = useElementStore();
-  const { activeStoreyId } = useProjectStore();
+  const { activeStoreyId, storeys } = useProjectStore();
   const { snapSettings } = useViewStore();
   const { snap } = useSnap();
 
   const { assetId, scale, rotation } = assetPlacement.params;
   const { previewPosition } = assetPlacement;
+
+  // Get storey elevation for Z position
+  const activeStorey = storeys.find(s => s.id === activeStoreyId);
+  const storeyElevation = activeStorey?.elevation ?? 0;
 
   /**
    * Handle pointer move - update preview position
@@ -89,7 +93,7 @@ export function useAssetPlacement() {
         position: {
           x: position.x,
           y: position.y,
-          z: 0, // Z-up: elements on ground at z=0
+          z: storeyElevation, // Z-up: elements at storey elevation
         },
         rotation: rotationRad,
         scale: scale * asset.defaultScale,
@@ -104,6 +108,7 @@ export function useAssetPlacement() {
     [
       assetId,
       activeStoreyId,
+      storeyElevation,
       previewPosition,
       rotation,
       scale,

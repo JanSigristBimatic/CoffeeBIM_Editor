@@ -4,6 +4,9 @@ import { temporal } from 'zundo';
 import type { BimElement, ElementType } from '@/types/bim';
 import { updateOpeningFromElement, getHostWallId } from '@/bim/elements';
 import { createIndexedDBStorage } from '@/lib/storage';
+import { createLogger } from '@/lib/utils/logger';
+
+const logger = createLogger('CoffeeBIM');
 
 interface ElementState {
   elements: Map<string, BimElement>;
@@ -17,6 +20,9 @@ interface ElementActions {
   removeElement: (id: string) => void;
   removeElements: (ids: string[]) => void;
 
+  // Transform operations
+  moveElements: (ids: string[], delta: { x: number; y: number; z: number }) => void;
+
   // Queries
   getElement: (id: string) => BimElement | undefined;
   getElementsByType: (type: ElementType) => BimElement[];
@@ -26,6 +32,14 @@ interface ElementActions {
   // Wall-specific
   getWallById: (id: string) => BimElement | undefined;
   getWallsForStorey: (storeyId: string) => BimElement[];
+
+  // Space-specific
+  getSpaceById: (id: string) => BimElement | undefined;
+  getSpacesForStorey: (storeyId: string) => BimElement[];
+  getAllSpaces: () => BimElement[];
+
+  // Import
+  importElements: (elements: BimElement[], replace?: boolean) => void;
 
   // Utility
   clearAll: () => void;
@@ -111,6 +125,51 @@ export const useElementStore = create<ElementState & ElementActions>()(
           return { elements: newElements };
         }),
 
+      // Transform operations
+      moveElements: (ids, delta) =>
+        set((state) => {
+          const newElements = new Map(state.elements);
+
+          for (const id of ids) {
+            const element = newElements.get(id);
+            if (!element) continue;
+
+            // Update position
+            const newPosition = {
+              x: element.placement.position.x + delta.x,
+              y: element.placement.position.y + delta.y,
+              z: element.placement.position.z + delta.z,
+            };
+
+            // Handle wall-specific updates (startPoint/endPoint)
+            let wallData = element.wallData;
+            if (wallData) {
+              wallData = {
+                ...wallData,
+                startPoint: {
+                  x: wallData.startPoint.x + delta.x,
+                  y: wallData.startPoint.y + delta.y,
+                },
+                endPoint: {
+                  x: wallData.endPoint.x + delta.x,
+                  y: wallData.endPoint.y + delta.y,
+                },
+              };
+            }
+
+            newElements.set(id, {
+              ...element,
+              placement: {
+                ...element.placement,
+                position: newPosition,
+              },
+              ...(wallData && { wallData }),
+            });
+          }
+
+          return { elements: newElements };
+        }),
+
       // Queries
       getElement: (id) => get().elements.get(id),
 
@@ -132,6 +191,31 @@ export const useElementStore = create<ElementState & ElementActions>()(
         Array.from(get().elements.values()).filter(
           (e) => e.type === 'wall' && e.parentId === storeyId
         ),
+
+      // Space-specific
+      getSpaceById: (id) => {
+        const element = get().elements.get(id);
+        return element?.type === 'space' ? element : undefined;
+      },
+
+      getSpacesForStorey: (storeyId) =>
+        Array.from(get().elements.values()).filter(
+          (e) => e.type === 'space' && e.parentId === storeyId
+        ),
+
+      getAllSpaces: () =>
+        Array.from(get().elements.values()).filter((e) => e.type === 'space'),
+
+      // Import
+      importElements: (elements, replace = true) =>
+        set((state) => {
+          if (replace) {
+            return { elements: new Map(elements.map((e) => [e.id, e])) };
+          }
+          const newElements = new Map(state.elements);
+          elements.forEach((e) => newElements.set(e.id, e));
+          return { elements: newElements };
+        }),
 
       // Utility
       clearAll: () => set({ elements: new Map() }),
@@ -155,30 +239,30 @@ export const useElementStore = create<ElementState & ElementActions>()(
         const serialized = {
           elements: Array.from(state.elements.entries()),
         };
-        console.log('[CoffeeBIM] Speichere Elemente:', serialized.elements.length);
+        logger.log('Speichere Elemente:', serialized.elements.length);
         return serialized;
       },
-      // Konvertiere Array zurück zu Map beim Laden
+      // Konvertiere Array zuruck zu Map beim Laden
       merge: (persistedState, currentState) => {
         const persisted = persistedState as SerializedElementState | undefined;
-        console.log('[CoffeeBIM] Lade Elemente, persisted:', persisted);
+        logger.log('Lade Elemente, persisted:', persisted);
         if (!persisted || !persisted.elements) {
-          console.log('[CoffeeBIM] Keine gespeicherten Elemente gefunden');
+          logger.log('Keine gespeicherten Elemente gefunden');
           return currentState;
         }
-        console.log('[CoffeeBIM] Geladene Elemente:', persisted.elements.length);
+        logger.log('Geladene Elemente:', persisted.elements.length);
         return {
           ...currentState,
           elements: new Map(persisted.elements),
         };
       },
       onRehydrateStorage: () => {
-        console.log('[CoffeeBIM] Starte Hydration...');
+        logger.log('Starte Hydration...');
         return (state, error) => {
           if (error) {
-            console.error('[CoffeeBIM] Hydration Fehler:', error);
+            logger.error('Hydration Fehler:', error);
           } else {
-            console.log('[CoffeeBIM] Hydration fertig, Elemente:', state?.elements?.size ?? 0);
+            logger.log('Hydration fertig, Elemente:', state?.elements?.size ?? 0);
           }
         };
       },

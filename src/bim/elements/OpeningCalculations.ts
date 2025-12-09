@@ -48,6 +48,8 @@ export function calculatePositionFromRightDistance(
 
 /**
  * Calculate the world position of an opening given its host wall
+ * Z-up coordinate system: 2D (x,y) → 3D (x, y, z)
+ * The Z position comes from the wall's placement (storey elevation)
  */
 export function calculateOpeningWorldPosition(
   positionOnWall: number,
@@ -57,17 +59,21 @@ export function calculateOpeningWorldPosition(
 
   const { startPoint, endPoint } = wall.wallData;
 
-  // Calculate position along wall
+  // Calculate position along wall in XY plane
   const dx = endPoint.x - startPoint.x;
   const dy = endPoint.y - startPoint.y;
 
+  // Z-up: x stays x, y stays y
   const x = startPoint.x + dx * positionOnWall;
-  const z = startPoint.y + dy * positionOnWall; // Note: 2D y maps to 3D z
+  const y = startPoint.y + dy * positionOnWall;
 
-  // Calculate wall angle
+  // Z comes from wall's storey elevation
+  const z = wall.placement.position.z;
+
+  // Calculate wall angle (rotation around Z axis)
   const angle = Math.atan2(dy, dx);
 
-  return { x, y: 0, z, angle };
+  return { x, y, z, angle };
 }
 
 /**

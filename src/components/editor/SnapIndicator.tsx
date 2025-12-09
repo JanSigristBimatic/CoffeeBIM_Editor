@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { useToolStore } from '@/store';
 import { useMemo } from 'react';
-import { useSnap } from '@/hooks/useSnap';
+import { useSnap, useStoreyElevation } from '@/hooks';
 import type { SnapType } from '@/types/geometry';
 
 /** Snap indicator colors */
@@ -184,19 +184,20 @@ function SnapSymbol({ type }: { type: SnapType }) {
 export function SnapIndicator() {
   const { activeTool, cursorPosition } = useToolStore();
   const { getNearestSnapPoint, snapEnabled, snapSettings } = useSnap();
+  const storeyElevation = useStoreyElevation();
 
   // Find if we're near a snap point using the global cursor position
   const snapInfo = useMemo(() => {
     if (!cursorPosition) return null;
-    if (!['wall', 'slab', 'column', 'counter'].includes(activeTool)) return null;
+    if (!['wall', 'slab', 'column', 'counter', 'space-draw'].includes(activeTool)) return null;
     return getNearestSnapPoint(cursorPosition);
   }, [cursorPosition, activeTool, getNearestSnapPoint]);
 
   if (!snapInfo || !snapEnabled || !snapSettings.enabled) return null;
 
-  // Z-up: position is (x, y, z) where z is height
+  // Z-up: position is (x, y, z) where z is storey elevation + indicator height
   return (
-    <group position={[snapInfo.point.x, snapInfo.point.y, INDICATOR_HEIGHT]}>
+    <group position={[snapInfo.point.x, snapInfo.point.y, storeyElevation + INDICATOR_HEIGHT]}>
       <SnapSymbol type={snapInfo.type} />
     </group>
   );

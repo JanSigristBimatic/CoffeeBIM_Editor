@@ -18,6 +18,7 @@ export interface CreateCounterParams {
   /** Front line path (customer side) - minimum 2 points */
   path: Point2D[];
   storeyId: string;
+  elevation?: number; // Storey elevation (Z position)
   counterType?: CounterType;
   depth?: number;
   height?: number;
@@ -80,6 +81,7 @@ export function createCounter(params: CreateCounterParams): BimElement {
   const {
     path,
     storeyId,
+    elevation = 0,
     counterType = 'standard',
     depth = DEFAULT_COUNTER_DEPTH,
     height,
@@ -165,8 +167,8 @@ export function createCounter(params: CreateCounterParams): BimElement {
       direction: { x: 0, y: 0, z: 1 },
     },
     placement: {
-      // Position at origin - counter uses world coordinates directly from path
-      position: { x: 0, y: 0, z: 0 },
+      // Counter uses world coordinates directly from path, Z is storey elevation
+      position: { x: 0, y: 0, z: elevation },
       rotation: { x: 0, y: 0, z: 0, w: 1 },
     },
     properties: [counterPset, ...assetPsets],

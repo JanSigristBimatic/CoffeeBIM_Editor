@@ -6,15 +6,19 @@ import { useDragElement } from '../TransformGizmo';
 interface SlabMeshProps {
   element: BimElement;
   selected: boolean;
+  isGhost?: boolean;
+  ghostOpacity?: number;
 }
 
 // Material colors
 const SLAB_COLOR = '#d4d4d8'; // Zinc-300
 const SLAB_COLOR_SELECTED = '#93c5fd'; // Blue-300
+const GHOST_COLOR = '#9e9e9e';
 
-export function SlabMesh({ element, selected }: SlabMeshProps) {
+export function SlabMesh({ element, selected, isGhost = false, ghostOpacity = 0.25 }: SlabMeshProps) {
   const meshRef = useRef<Mesh>(null);
   const { handlers } = useDragElement(element);
+  const effectiveHandlers = isGhost ? {} : handlers;
 
   const { slabData } = element;
 
@@ -58,12 +62,22 @@ export function SlabMesh({ element, selected }: SlabMeshProps) {
 
   // Create material
   const material = useMemo(() => {
+    if (isGhost) {
+      return new MeshStandardMaterial({
+        color: GHOST_COLOR,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: ghostOpacity,
+        depthWrite: false,
+      });
+    }
     return new MeshStandardMaterial({
       color: selected ? SLAB_COLOR_SELECTED : SLAB_COLOR,
       roughness: 0.9,
       metalness: 0.0,
     });
-  }, [selected]);
+  }, [selected, isGhost, ghostOpacity]);
 
   if (!geometry || !slabData) return null;
 
@@ -74,10 +88,11 @@ export function SlabMesh({ element, selected }: SlabMeshProps) {
       ref={meshRef}
       geometry={geometry}
       material={material}
-      position={[0, 0, 0]}
+      position={[0, 0, element.placement.position.z]}
       rotation={[0, 0, 0]}
-      {...handlers}
-      receiveShadow
+      {...effectiveHandlers}
+      receiveShadow={!isGhost}
+      renderOrder={isGhost ? -1 : 0}
     />
   );
 }

@@ -5,8 +5,9 @@
  * Unterstützt große Datenmengen (im Gegensatz zu LocalStorage's 5MB Limit).
  */
 
-import { get, set, del, createStore } from 'idb-keyval';
+import { get, set, del, clear, createStore } from 'idb-keyval';
 import type { PersistStorage, StorageValue } from 'zustand/middleware';
+import { storageLogger as logger } from '@/lib/utils/logger';
 
 // Eigener Store für CoffeeBIM (separiert von anderen Apps)
 const coffeeBimStore = createStore('coffeebim-db', 'coffeebim-store');
@@ -19,10 +20,10 @@ export function createIndexedDBStorage<T>(): PersistStorage<T> {
     getItem: async (name: string): Promise<StorageValue<T> | null> => {
       try {
         const value = await get<StorageValue<T>>(name, coffeeBimStore);
-        console.log(`[CoffeeBIM Storage] getItem(${name}):`, value ? 'Daten gefunden' : 'Keine Daten');
+        logger.log(`getItem(${name}):`, value ? 'Daten gefunden' : 'Keine Daten');
         return value ?? null;
       } catch (error) {
-        console.error(`[CoffeeBIM Storage] getItem Fehler:`, error);
+        logger.error(`getItem Fehler:`, error);
         return null;
       }
     },
@@ -30,9 +31,9 @@ export function createIndexedDBStorage<T>(): PersistStorage<T> {
     setItem: async (name: string, value: StorageValue<T>): Promise<void> => {
       try {
         await set(name, value, coffeeBimStore);
-        console.log(`[CoffeeBIM Storage] setItem(${name}): Gespeichert`);
+        logger.log(`setItem(${name}): Gespeichert`);
       } catch (error) {
-        console.error(`[CoffeeBIM Storage] setItem Fehler:`, error);
+        logger.error(`setItem Fehler:`, error);
       }
     },
 
@@ -52,13 +53,13 @@ export const requestPersistentStorage = async (): Promise<boolean> => {
   if (navigator.storage && navigator.storage.persist) {
     const isPersisted = await navigator.storage.persist();
     if (isPersisted) {
-      console.log('[CoffeeBIM] Persistenter Speicher aktiviert');
+      logger.log('Persistenter Speicher aktiviert');
     } else {
-      console.warn('[CoffeeBIM] Persistenter Speicher nicht gewährt - Daten könnten bei Speicherknappheit gelöscht werden');
+      logger.warn('Persistenter Speicher nicht gewahrt - Daten konnten bei Speicherknappheit geloscht werden');
     }
     return isPersisted;
   }
-  console.warn('[CoffeeBIM] Storage API nicht verfügbar');
+  logger.warn('Storage API nicht verfugbar');
   return false;
 };
 
@@ -74,4 +75,18 @@ export const getStorageEstimate = async (): Promise<{ used: number; quota: numbe
     };
   }
   return null;
+};
+
+/**
+ * Löscht alle Daten aus der CoffeeBIM IndexedDB
+ * ACHTUNG: Diese Aktion kann nicht rückgängig gemacht werden!
+ */
+export const clearDatabase = async (): Promise<void> => {
+  try {
+    await clear(coffeeBimStore);
+    logger.log('IndexedDB gelöscht');
+  } catch (error) {
+    logger.error('clearDatabase Fehler:', error);
+    throw error;
+  }
 };

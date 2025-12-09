@@ -43,3 +43,21 @@ export {
   DEFAULT_FURNITURE_SCALE,
 } from './Furniture';
 export type { CreateFurnitureParams, FurnitureCategory } from './Furniture';
+export {
+  createSpace,
+  createSpaceFromPolygon,
+  updateSpaceProperties,
+  renameSpace,
+  getSpaceArea,
+  getSpaceVolume,
+  isExternalSpace,
+} from './Space';
+export type { CreateSpaceParams, CreateSpaceFromPolygonParams } from './Space';
+export {
+  createStair,
+  calculateSteps,
+  updateStairForStoreyChange,
+  getStairRunLength,
+  getStairOpeningOutline,
+} from './Stair';
+export type { CreateStairParams } from './Stair';

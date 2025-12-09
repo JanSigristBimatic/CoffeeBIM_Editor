@@ -7,20 +7,24 @@ import { useDragElement } from '../TransformGizmo';
 interface WindowMeshProps {
   element: BimElement;
   selected: boolean;
+  isGhost?: boolean;
+  ghostOpacity?: number;
 }
 
 // Material colors
 const FRAME_COLOR = '#FFFFFF'; // White frame
 const FRAME_COLOR_SELECTED = '#90caf9';
+const GHOST_COLOR = '#9e9e9e';
 
 const FRAME_WIDTH = 0.05; // Frame thickness
 const FRAME_DEPTH = 0.06; // Frame depth
 const GLASS_THICKNESS = 0.01; // Glass thickness
 
-export function WindowMesh({ element, selected }: WindowMeshProps) {
+export function WindowMesh({ element, selected, isGhost = false, ghostOpacity = 0.25 }: WindowMeshProps) {
   const groupRef = useRef<Group>(null);
   const { getElement, elements } = useElementStore();
   const { handlers } = useDragElement(element);
+  const effectiveHandlers = isGhost ? {} : handlers;
 
   const { windowData } = element;
 
@@ -48,8 +52,11 @@ export function WindowMesh({ element, selected }: WindowMeshProps) {
     // Wall angle
     const angle = Math.atan2(dy, dx);
 
+    // Include wall's storey elevation
+    const wallElevation = hostWall.placement.position.z;
+
     return {
-      position: { x, y, z: sillHeight },
+      position: { x, y, z: wallElevation + sillHeight },
       angle,
       wallThickness: thickness,
     };
@@ -83,14 +90,34 @@ export function WindowMesh({ element, selected }: WindowMeshProps) {
 
   // Materials
   const frameMaterial = useMemo(() => {
+    if (isGhost) {
+      return new MeshStandardMaterial({
+        color: GHOST_COLOR,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: ghostOpacity,
+        depthWrite: false,
+      });
+    }
     return new MeshStandardMaterial({
       color: selected ? FRAME_COLOR_SELECTED : FRAME_COLOR,
       roughness: 0.3,
       metalness: 0.1,
     });
-  }, [selected]);
+  }, [selected, isGhost, ghostOpacity]);
 
   const glassMaterial = useMemo(() => {
+    if (isGhost) {
+      return new MeshStandardMaterial({
+        color: GHOST_COLOR,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: ghostOpacity * 0.5,
+        depthWrite: false,
+      });
+    }
     return new MeshPhysicalMaterial({
       color: '#88ccff',
       metalness: 0,
@@ -100,7 +127,7 @@ export function WindowMesh({ element, selected }: WindowMeshProps) {
       transparent: true,
       opacity: 0.3,
     });
-  }, []);
+  }, [isGhost, ghostOpacity]);
 
   if (!windowData || !transform || !frameGeometries || !glassGeometry) return null;
 
@@ -113,14 +140,15 @@ export function WindowMesh({ element, selected }: WindowMeshProps) {
       ref={groupRef}
       position={[transform.position.x, transform.position.y, transform.position.z]}
       rotation={new Euler(Math.PI / 2, 0, transform.angle, 'ZXY')}
-      {...handlers}
+      {...effectiveHandlers}
+      renderOrder={isGhost ? -1 : 0}
     >
       {/* Left frame */}
       <mesh
         geometry={frameGeometries.left}
         material={frameMaterial}
         position={[-hw - FRAME_WIDTH / 2, height / 2, 0]}
-        castShadow
+        castShadow={!isGhost}
       />
 
       {/* Right frame */}
@@ -128,7 +156,7 @@ export function WindowMesh({ element, selected }: WindowMeshProps) {
         geometry={frameGeometries.right}
         material={frameMaterial}
         position={[hw + FRAME_WIDTH / 2, height / 2, 0]}
-        castShadow
+        castShadow={!isGhost}
       />
 
       {/* Top frame */}
@@ -136,7 +164,7 @@ export function WindowMesh({ element, selected }: WindowMeshProps) {
         geometry={frameGeometries.top}
         material={frameMaterial}
         position={[0, height + FRAME_WIDTH / 2, 0]}
-        castShadow
+        castShadow={!isGhost}
       />
 
       {/* Bottom frame (sill) */}
@@ -144,7 +172,7 @@ export function WindowMesh({ element, selected }: WindowMeshProps) {
         geometry={frameGeometries.bottom}
         material={frameMaterial}
         position={[0, -FRAME_WIDTH / 2, 0]}
-        castShadow
+        castShadow={!isGhost}
       />
 
       {/* Glass pane */}

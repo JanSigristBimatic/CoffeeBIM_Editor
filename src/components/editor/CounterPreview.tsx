@@ -2,29 +2,30 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { Line, Html } from '@react-three/drei';
 import { useToolStore } from '@/store';
+import { useStoreyElevation } from '@/hooks';
 import type { Point2D } from '@/types/geometry';
 import { offsetPath } from '@/lib/geometry/pathOffset';
 
 /**
  * Create a closed polygon outline from front and back paths
- * Z-up: x, y are ground plane, z is height
+ * Z-up: x, y are ground plane, z is storey elevation + offset
  */
-function createOutlinePoints(frontPath: Point2D[], backPath: Point2D[]): THREE.Vector3[] {
+function createOutlinePoints(frontPath: Point2D[], backPath: Point2D[], storeyElevation: number): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
 
-  // Front path (Z-up: x, y ground, z height)
+  // Front path (Z-up: x, y ground, z is storey elevation + offset)
   for (const p of frontPath) {
-    points.push(new THREE.Vector3(p.x, p.y, 0.01));
+    points.push(new THREE.Vector3(p.x, p.y, storeyElevation + 0.01));
   }
 
   // Back path in reverse
   for (let i = backPath.length - 1; i >= 0; i--) {
-    points.push(new THREE.Vector3(backPath[i]!.x, backPath[i]!.y, 0.01));
+    points.push(new THREE.Vector3(backPath[i]!.x, backPath[i]!.y, storeyElevation + 0.01));
   }
 
   // Close the loop
   if (frontPath.length > 0) {
-    points.push(new THREE.Vector3(frontPath[0]!.x, frontPath[0]!.y, 0.01));
+    points.push(new THREE.Vector3(frontPath[0]!.x, frontPath[0]!.y, storeyElevation + 0.01));
   }
 
   return points;
@@ -40,6 +41,7 @@ function createOutlinePoints(frontPath: Point2D[], backPath: Point2D[]): THREE.V
  */
 export function CounterPreview() {
   const { activeTool, counterPlacement, distanceInput } = useToolStore();
+  const storeyElevation = useStoreyElevation();
 
   const preview = useMemo(() => {
     if (activeTool !== 'counter') return null;
@@ -64,23 +66,23 @@ export function CounterPreview() {
       ? offsetPath(currentPath, depth)
       : [];
 
-    // Convert to 3D points (Z-up: x, y ground, z height)
+    // Convert to 3D points (Z-up: x, y ground, z is storey elevation + offset)
     const frontLinePoints = currentPath.map(
-      (p) => new THREE.Vector3(p.x, p.y, 0.02)
+      (p) => new THREE.Vector3(p.x, p.y, storeyElevation + 0.02)
     );
 
     const backLinePoints = backPath.map(
-      (p) => new THREE.Vector3(p.x, p.y, 0.02)
+      (p) => new THREE.Vector3(p.x, p.y, storeyElevation + 0.02)
     );
 
     // Outline points (only if we have at least 2 points)
     const outlinePoints = currentPath.length >= 2
-      ? createOutlinePoints(frontWithOverhang, backPath)
+      ? createOutlinePoints(frontWithOverhang, backPath, storeyElevation)
       : [];
 
     // Point markers for placed points (Z-up)
     const pointMarkers = points.map((p) => (
-      new THREE.Vector3(p.x, p.y, 0.02)
+      new THREE.Vector3(p.x, p.y, storeyElevation + 0.02)
     ));
 
     return {
@@ -89,10 +91,11 @@ export function CounterPreview() {
       outlinePoints,
       pointMarkers,
       previewPoint: previewPoint
-        ? new THREE.Vector3(previewPoint.x, previewPoint.y, 0.02)
+        ? new THREE.Vector3(previewPoint.x, previewPoint.y, storeyElevation + 0.02)
         : null,
+      storeyElevation,
     };
-  }, [activeTool, counterPlacement]);
+  }, [activeTool, counterPlacement, storeyElevation]);
 
   if (!preview) return null;
 
@@ -148,9 +151,9 @@ export function CounterPreview() {
         </mesh>
       )}
 
-      {/* Helper text at first point (Z-up: z is height) */}
+      {/* Helper text at first point (Z-up: z is storey elevation + offset) */}
       {preview.pointMarkers.length > 0 && preview.pointMarkers.length < 2 && (
-        <group position={[preview.pointMarkers[0]!.x, preview.pointMarkers[0]!.y, 0.5]}>
+        <group position={[preview.pointMarkers[0]!.x, preview.pointMarkers[0]!.y, preview.storeyElevation + 0.5]}>
           {/* Visual indicator that user should continue clicking */}
         </group>
       )}
@@ -170,7 +173,7 @@ export function CounterPreview() {
 
         return (
           <Html
-            position={[midX, midY, 0.1]}
+            position={[midX, midY, preview.storeyElevation + 0.1]}
             center
             style={{ pointerEvents: 'none' }}
           >
