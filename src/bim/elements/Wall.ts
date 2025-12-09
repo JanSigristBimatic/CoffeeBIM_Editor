@@ -1,7 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { BimElement, WallData } from '@/types/bim';
+import type { BimElement, WallData, WallAlignmentSide } from '@/types/bim';
+import { DEFAULT_WALL_ALIGNMENT } from '@/types/bim';
 import type { Point2D } from '@/types/geometry';
 import { calculateWallGeometry } from '@/lib/geometry';
+
+// Re-export for convenience
+export { DEFAULT_WALL_ALIGNMENT };
 
 export const DEFAULT_WALL_THICKNESS = 0.2; // meters
 export const DEFAULT_WALL_HEIGHT = 3.0; // meters
@@ -14,6 +18,31 @@ export interface CreateWallParams {
   storeyId: string;
   elevation?: number; // Storey elevation (Z position)
   name?: string;
+  /** Which edge the reference line represents (left/center/right) */
+  alignmentSide?: WallAlignmentSide;
+}
+
+/**
+ * Calculate profile Y-offset based on alignment side
+ * - 'left': Wall extends to the right (positive Y in local coords) → offset = 0 to thickness
+ * - 'center': Wall centered on reference line → offset = -halfThickness to +halfThickness
+ * - 'right': Wall extends to the left (negative Y in local coords) → offset = -thickness to 0
+ */
+function getProfileOffset(alignmentSide: WallAlignmentSide, thickness: number): { min: number; max: number } {
+  const halfThickness = thickness / 2;
+
+  switch (alignmentSide) {
+    case 'left':
+      // Reference line is left edge, wall extends to the right
+      return { min: 0, max: thickness };
+    case 'right':
+      // Reference line is right edge, wall extends to the left
+      return { min: -thickness, max: 0 };
+    case 'center':
+    default:
+      // Reference line is center (traditional)
+      return { min: -halfThickness, max: halfThickness };
+  }
 }
 
 /**
@@ -28,6 +57,7 @@ export function createWall(params: CreateWallParams): BimElement {
     storeyId,
     elevation = 0,
     name,
+    alignmentSide = DEFAULT_WALL_ALIGNMENT,
   } = params;
 
   // Calculate wall geometry using centralized utility
@@ -38,16 +68,17 @@ export function createWall(params: CreateWallParams): BimElement {
     throw new Error('Wall is too short (minimum 0.1m)');
   }
 
-  // Calculate perpendicular for thickness offset
-  const halfThickness = thickness / 2;
+  // Calculate profile offset based on alignment
+  const offset = getProfileOffset(alignmentSide, thickness);
 
   // Create rectangular profile for extrusion (in local coordinates)
   // Profile is in XY plane, will be extruded along Z
+  // Y-offset determined by alignment side
   const profile: Point2D[] = [
-    { x: 0, y: -halfThickness },
-    { x: wallGeometry.length, y: -halfThickness },
-    { x: wallGeometry.length, y: halfThickness },
-    { x: 0, y: halfThickness },
+    { x: 0, y: offset.min },
+    { x: wallGeometry.length, y: offset.min },
+    { x: wallGeometry.length, y: offset.max },
+    { x: 0, y: offset.max },
   ];
 
   const wallData: WallData = {
@@ -56,6 +87,7 @@ export function createWall(params: CreateWallParams): BimElement {
     thickness,
     height,
     openings: [],
+    alignmentSide,
   };
 
   const id = uuidv4();
@@ -141,12 +173,12 @@ export function getPositionOnWall(
 }
 
 /**
- * Update wall dimensions (thickness and/or height)
+ * Update wall dimensions (thickness, height, and/or alignment)
  * Recalculates geometry profile when dimensions change
  */
 export function updateWallDimensions(
   wall: BimElement,
-  updates: Partial<Pick<WallData, 'thickness' | 'height'>>
+  updates: Partial<Pick<WallData, 'thickness' | 'height' | 'alignmentSide'>>
 ): Partial<BimElement> {
   if (!wall.wallData) return {};
 
@@ -156,13 +188,13 @@ export function updateWallDimensions(
   // Calculate wall length using centralized utility
   const { length } = calculateWallGeometry(startPoint, endPoint);
 
-  // Recalculate profile with new thickness
-  const halfThickness = newWallData.thickness / 2;
+  // Recalculate profile with new thickness and alignment
+  const offset = getProfileOffset(newWallData.alignmentSide, newWallData.thickness);
   const profile: Point2D[] = [
-    { x: 0, y: -halfThickness },
-    { x: length, y: -halfThickness },
-    { x: length, y: halfThickness },
-    { x: 0, y: halfThickness },
+    { x: 0, y: offset.min },
+    { x: length, y: offset.min },
+    { x: length, y: offset.max },
+    { x: 0, y: offset.max },
   ];
 
   return {
@@ -173,4 +205,15 @@ export function updateWallDimensions(
       height: newWallData.height,
     },
   };
+}
+
+/**
+ * Update wall alignment side
+ * Convenience function for changing just the alignment
+ */
+export function updateWallAlignment(
+  wall: BimElement,
+  alignmentSide: WallAlignmentSide
+): Partial<BimElement> {
+  return updateWallDimensions(wall, { alignmentSide });
 }

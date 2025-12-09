@@ -1,67 +1,21 @@
 import { useMemo } from 'react';
 import { Line } from '@react-three/drei';
-import { MeshStandardMaterial, BufferGeometry, Shape, ExtrudeGeometry, Euler } from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { MeshStandardMaterial, Shape, ExtrudeGeometry, Euler, BufferGeometry } from 'three';
 import { useStairPlacement } from '@/hooks';
 import { useProjectStore } from '@/store';
 
-// Step tread thickness (the horizontal part you step on)
-const TREAD_THICKNESS = 0.04;
+// Stair slab thickness (matching StairMesh.tsx)
+const STAIR_SLAB_THICKNESS = 0.15;
 
 /**
- * Create geometry for a single step
- */
-function createStepGeometry(
-  stepIndex: number,
-  treadDepth: number,
-  riserHeight: number,
-  width: number,
-  totalSteps: number
-): BufferGeometry {
-  const halfWidth = width / 2;
-  const stepStartX = stepIndex * treadDepth;
-  const stepBottomZ = stepIndex * riserHeight;
-
-  const shape = new Shape();
-  const hasTread = stepIndex < totalSteps - 1;
-
-  if (hasTread) {
-    shape.moveTo(stepStartX, -halfWidth);
-    shape.lineTo(stepStartX, halfWidth);
-    shape.lineTo(stepStartX + treadDepth, halfWidth);
-    shape.lineTo(stepStartX + treadDepth, -halfWidth);
-    shape.closePath();
-
-    const extrudeSettings = {
-      steps: 1,
-      depth: riserHeight + TREAD_THICKNESS,
-      bevelEnabled: false,
-    };
-
-    const geo = new ExtrudeGeometry(shape, extrudeSettings);
-    geo.translate(0, 0, stepBottomZ);
-    return geo;
-  } else {
-    shape.moveTo(stepStartX, -halfWidth);
-    shape.lineTo(stepStartX, halfWidth);
-    shape.lineTo(stepStartX + TREAD_THICKNESS, halfWidth);
-    shape.lineTo(stepStartX + TREAD_THICKNESS, -halfWidth);
-    shape.closePath();
-
-    const extrudeSettings = {
-      steps: 1,
-      depth: riserHeight,
-      bevelEnabled: false,
-    };
-
-    const geo = new ExtrudeGeometry(shape, extrudeSettings);
-    geo.translate(0, 0, stepBottomZ);
-    return geo;
-  }
-}
-
-/**
- * Create the complete stair geometry by merging all steps
+ * Create stair geometry matching StairMesh.tsx:
+ * - Stepped top surface (treads and risers)
+ * - Smooth sloped bottom surface
+ *
+ * Coordinate system (Z-up):
+ * - X = run direction (forward)
+ * - Y = width direction (left-right)
+ * - Z = height direction (up)
  */
 function createStairGeometry(
   stepCount: number,
@@ -71,17 +25,60 @@ function createStairGeometry(
 ): BufferGeometry | null {
   if (stepCount < 1) return null;
 
-  const stepGeometries: BufferGeometry[] = [];
+  const halfWidth = width / 2;
+  const totalRise = stepCount * riserHeight;
+  const runLength = (stepCount - 1) * treadDepth;
 
+  // Create side profile shape in XY plane (Shape's coordinate system)
+  // We map: shape.X = our X (run direction), shape.Y = our Z (height)
+  const sideProfile = new Shape();
+
+  // Start at bottom-front corner
+  sideProfile.moveTo(0, 0);
+
+  // Draw the stepped top surface (treads and risers)
   for (let i = 0; i < stepCount; i++) {
-    const stepGeo = createStepGeometry(i, treadDepth, riserHeight, width, stepCount);
-    stepGeometries.push(stepGeo);
+    const stepX = i * treadDepth;
+    const stepZ = (i + 1) * riserHeight;
+
+    // Riser (vertical face going up)
+    sideProfile.lineTo(stepX, stepZ);
+
+    // Tread (horizontal face) - except for last step
+    if (i < stepCount - 1) {
+      sideProfile.lineTo(stepX + treadDepth, stepZ);
+    }
   }
 
-  const mergedGeometry = mergeGeometries(stepGeometries);
-  stepGeometries.forEach((geo) => geo.dispose());
+  // Top of last step - add short landing
+  sideProfile.lineTo(runLength + treadDepth * 0.5, totalRise);
 
-  return mergedGeometry;
+  // Go down to sloped underside
+  sideProfile.lineTo(runLength + treadDepth * 0.5, totalRise - STAIR_SLAB_THICKNESS);
+
+  // Draw the sloped underside (back to start)
+  sideProfile.lineTo(0, -STAIR_SLAB_THICKNESS);
+
+  // Close the shape
+  sideProfile.closePath();
+
+  // Extrude along the width direction
+  const extrudeSettings = {
+    steps: 1,
+    depth: width,
+    bevelEnabled: false,
+  };
+
+  const geometry = new ExtrudeGeometry(sideProfile, extrudeSettings);
+
+  // Transform to Z-up coordinate system:
+  // rotateX(+90°) maps Y→Z (height up), Z→-Y (width)
+  geometry.rotateX(Math.PI / 2);
+
+  // Center along width (Y axis)
+  geometry.translate(0, halfWidth, 0);
+
+  return geometry;
 }
 
 /**

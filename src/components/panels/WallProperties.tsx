@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
-import type { BimElement } from '@/types/bim';
+import type { BimElement, WallAlignmentSide } from '@/types/bim';
+import { WALL_ALIGNMENT_LABELS } from '@/types/bim';
 import { useElementStore } from '@/store';
 import { updateWallDimensions, calculateWallLength } from '@/bim/elements/Wall';
 
@@ -47,6 +48,17 @@ export function WallProperties({ element }: WallPropertiesProps) {
     [wallData, element, updateElement]
   );
 
+  // Update wall alignment
+  const handleAlignmentChange = useCallback(
+    (newAlignment: WallAlignmentSide) => {
+      if (!wallData) return;
+
+      const updates = updateWallDimensions(element, { alignmentSide: newAlignment });
+      updateElement(element.id, updates);
+    },
+    [wallData, element, updateElement]
+  );
+
   if (!wallData) {
     return <div className="text-sm text-muted-foreground">Wand-Daten nicht verfügbar</div>;
   }
@@ -58,6 +70,25 @@ export function WallProperties({ element }: WallPropertiesProps) {
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-semibold">Wand-Parameter</h3>
+
+      {/* Alignment */}
+      <div>
+        <label className="text-xs text-muted-foreground">Referenzkante</label>
+        <select
+          value={wallData.alignmentSide}
+          onChange={(e) => handleAlignmentChange(e.target.value as WallAlignmentSide)}
+          className="w-full mt-1 px-2 py-1.5 text-sm border rounded bg-background"
+        >
+          {(Object.keys(WALL_ALIGNMENT_LABELS) as WallAlignmentSide[]).map((side) => (
+            <option key={side} value={side}>
+              {WALL_ALIGNMENT_LABELS[side]}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-muted-foreground mt-0.5 block">
+          Definiert, welche Kante die gezeichnete Linie repräsentiert
+        </span>
+      </div>
 
       {/* Dimensions */}
       <div className="grid grid-cols-2 gap-2">

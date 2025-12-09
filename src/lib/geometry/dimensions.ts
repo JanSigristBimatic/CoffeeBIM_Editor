@@ -85,7 +85,8 @@ export function calculatePolygonCentroid(points: Point2D[]): Point2D {
  */
 export function calculateWallDimensionPosition(
   wall: WallData,
-  offsetDistance: number
+  offsetDistance: number,
+  storeyElevation: number = 0
 ): {
   position2D: Dimension['position2D'];
   position3D: Vector3;
@@ -105,7 +106,7 @@ export function calculateWallDimensionPosition(
   if (length === 0) {
     return {
       position2D: { x: midX, y: midY, offset: 0, rotation: 0 },
-      position3D: { x: midX, y: midY, z: height / 2 },
+      position3D: { x: midX, y: midY, z: storeyElevation + height / 2 },
       measureLine: { start: startPoint, end: endPoint },
     };
   }
@@ -127,7 +128,7 @@ export function calculateWallDimensionPosition(
     position3D: {
       x: midX + nx * offsetDistance,
       y: midY + ny * offsetDistance,
-      z: height / 2,
+      z: storeyElevation + height / 2,
     },
     measureLine: {
       start: startPoint,
@@ -157,7 +158,9 @@ export function generateWallLengthDimension(
   if (!element.wallData) return null;
 
   const length = calculateWallLength(element.wallData);
-  const pos = calculateWallDimensionPosition(element.wallData, settings.offsetDistance);
+  // Use element's Z position as storey elevation
+  const storeyElevation = element.placement.position.z;
+  const pos = calculateWallDimensionPosition(element.wallData, settings.offsetDistance, storeyElevation);
 
   return {
     id: `dim-${element.id}-length`,
@@ -183,6 +186,8 @@ export function generateSpaceAreaDimension(
 
   const { area, boundaryPolygon } = element.spaceData;
   const centroid = calculatePolygonCentroid(boundaryPolygon);
+  // Use element's Z position as storey elevation
+  const storeyElevation = element.placement.position.z;
 
   return {
     id: `dim-${element.id}-area`,
@@ -201,7 +206,7 @@ export function generateSpaceAreaDimension(
     position3D: {
       x: centroid.x,
       y: centroid.y,
-      z: 0.1, // Slightly above floor level
+      z: storeyElevation + 0.1, // Slightly above floor level at storey elevation
     },
   };
 }

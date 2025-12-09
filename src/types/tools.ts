@@ -1,5 +1,5 @@
 import type { Point2D, Vector2D } from './geometry';
-import type { DoorType, WindowType, CounterType, StairType } from './bim';
+import type { DoorType, WindowType, CounterType, StairType, WallAlignmentSide } from './bim';
 
 /**
  * Available tool types in the editor
@@ -30,9 +30,21 @@ export type ToolType =
 export type ViewMode = '2d' | '3d' | 'split';
 
 /**
+ * Wall placement parameters (configurable before placement)
+ */
+export interface WallPlacementParams {
+  thickness: number;
+  height: number;
+  /** Which edge the reference line represents (left/center/right) */
+  alignmentSide: WallAlignmentSide;
+}
+
+/**
  * State for wall placement tool
  */
 export interface WallPlacementState {
+  /** Current wall parameters */
+  params: WallPlacementParams;
   startPoint: Point2D | null;
   previewEndPoint: Point2D | null;
   isPlacing: boolean;

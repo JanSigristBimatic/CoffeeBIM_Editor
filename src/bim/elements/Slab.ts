@@ -10,6 +10,7 @@ export interface CreateSlabParams {
   slabType?: 'floor' | 'ceiling';
   thickness?: number;
   elevation?: number; // Storey elevation (Z position)
+  elevationOffset?: number; // Vertical offset from storey elevation
   name?: string;
 }
 
@@ -24,6 +25,7 @@ export function createSlab(params: CreateSlabParams): BimElement {
     slabType = 'floor',
     thickness = DEFAULT_SLAB_THICKNESS,
     elevation = 0,
+    elevationOffset = 0,
     name,
   } = params;
 
@@ -46,6 +48,7 @@ export function createSlab(params: CreateSlabParams): BimElement {
     slabType,
     thickness,
     outline: outline.map((p) => ({ ...p })), // Clone points
+    elevationOffset,
   };
 
   return {
@@ -85,11 +88,11 @@ export function calculateSlabArea(points: Point2D[]): number {
 }
 
 /**
- * Update slab dimensions (thickness and/or type)
+ * Update slab dimensions (thickness, type, and/or elevation offset)
  */
 export function updateSlabDimensions(
   slab: BimElement,
-  updates: Partial<Pick<SlabData, 'thickness' | 'slabType'>>
+  updates: Partial<Pick<SlabData, 'thickness' | 'slabType' | 'elevationOffset'>>
 ): Partial<BimElement> {
   if (!slab.slabData) return {};
 
@@ -109,6 +112,7 @@ export function updateSlabDimensions(
               ...ps.properties,
               SlabType: newSlabData.slabType,
               Thickness: newSlabData.thickness,
+              ElevationOffset: newSlabData.elevationOffset ?? 0,
             },
           }
         : ps

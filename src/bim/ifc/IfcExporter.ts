@@ -938,14 +938,20 @@ export class IfcExporter {
   private createSlab(slab: BimElement, storeys: StoreyInfo[]): void {
     if (!slab.slabData) return;
 
-    const { thickness, outline } = slab.slabData;
+    const { thickness, outline, slabType, elevationOffset = 0 } = slab.slabData;
 
     // Find storey
     const storey = storeys.find((s) => s.id === slab.parentId);
     const storeyIfcId = storey ? this.storeyIds.get(storey.id) : null;
+    const storeyElevation = storey?.elevation ?? 0;
 
-    // Create placement
-    const placementId = this.createLocalPlacement(null, 0, 0, storey?.elevation ?? 0);
+    // Create placement with elevation offset
+    // Floor: extrude downward, so place at elevation - thickness (top surface at elevation)
+    // Ceiling: extrude upward from elevation (bottom surface at elevation)
+    // Add elevationOffset to shift the slab vertically
+    const baseZ = slabType === 'ceiling' ? storeyElevation : storeyElevation - thickness;
+    const placementZ = baseZ + elevationOffset;
+    const placementId = this.createLocalPlacement(null, 0, 0, placementZ);
 
     // Create arbitrary closed profile from outline
     const profileId = this.createArbitraryProfile(outline);
@@ -966,7 +972,8 @@ export class IfcExporter {
       Representations: [{ type: 5, value: shapeRepId }],
     });
 
-    // Create slab
+    // Create slab with appropriate PredefinedType
+    const predefinedType = slabType === 'ceiling' ? 'ROOF' : 'FLOOR';
     const slabIfcId = this.getNextId();
     this.ifcApi.WriteLine(this.modelId, {
       expressID: slabIfcId,
@@ -979,7 +986,7 @@ export class IfcExporter {
       ObjectPlacement: { type: 5, value: placementId },
       Representation: { type: 5, value: productRepId },
       Tag: null,
-      PredefinedType: { type: 3, value: 'FLOOR' },
+      PredefinedType: { type: 3, value: predefinedType },
     });
 
     // Create property sets
@@ -1455,6 +1462,9 @@ export class IfcExporter {
    * Create IfcStair from a stair element
    * IfcStair represents a vertical circulation element
    */
+  // Stair slab thickness (matching StairMesh.tsx)
+  private static readonly STAIR_SLAB_THICKNESS = 0.15; // 15cm typical concrete stair slab
+
   private createStair(stair: BimElement, storeys: StoreyInfo[]): void {
     if (!stair.stairData) return;
 
@@ -1475,56 +1485,47 @@ export class IfcExporter {
     // Create placement at stair start position with rotation
     const placementId = this.createLocalPlacement(null, posX, posY, posZ, rotation);
 
-    // Create step geometry as multiple extruded solids
-    const solidIds: number[] = [];
     const halfWidth = width / 2;
-    const treadThickness = 0.04; // 4cm tread thickness
+    const totalRise = stepCount * riserHeight;
+    const runLength = (stepCount - 1) * treadDepth;
 
+    // Create side profile matching StairMesh.tsx:
+    // - Stepped top surface (treads and risers)
+    // - Smooth sloped bottom surface
+    const profilePoints: { x: number; y: number }[] = [];
+
+    // Start at bottom-front corner
+    profilePoints.push({ x: 0, y: 0 });
+
+    // Draw the stepped top surface (treads and risers)
     for (let i = 0; i < stepCount; i++) {
-      const stepStartX = i * treadDepth;
-      const stepBottomZ = i * riserHeight;
-      const isLastStep = i === stepCount - 1;
+      const stepX = i * treadDepth;
+      const stepZ = (i + 1) * riserHeight;
 
-      // Each step is an L-shaped profile extruded along Y (width direction)
-      // For simplicity, we create a rectangular tread for each step
-      if (!isLastStep) {
-        // Regular step: tread + riser combined
-        // Profile: rectangle in XZ plane (tread depth x total step height)
-        const stepHeight = riserHeight + treadThickness;
+      // Riser (vertical face going up)
+      profilePoints.push({ x: stepX, y: stepZ });
 
-        // Create rectangular profile for tread
-        const treadPoints: { x: number; y: number }[] = [
-          { x: stepStartX, y: stepBottomZ },
-          { x: stepStartX + treadDepth, y: stepBottomZ },
-          { x: stepStartX + treadDepth, y: stepBottomZ + stepHeight },
-          { x: stepStartX, y: stepBottomZ + stepHeight },
-        ];
-
-        // Create profile for step (in XZ plane, extruded along Y)
-        const profileId = this.createStairStepProfile(treadPoints);
-
-        // Extrude along Y (width direction)
-        const solidId = this.createStairStepSolid(profileId, width, -halfWidth);
-        solidIds.push(solidId);
-      } else {
-        // Last step: just the riser/landing portion
-        const treadPoints: { x: number; y: number }[] = [
-          { x: stepStartX, y: stepBottomZ },
-          { x: stepStartX + treadThickness, y: stepBottomZ },
-          { x: stepStartX + treadThickness, y: stepBottomZ + riserHeight },
-          { x: stepStartX, y: stepBottomZ + riserHeight },
-        ];
-
-        const profileId = this.createStairStepProfile(treadPoints);
-        const solidId = this.createStairStepSolid(profileId, width, -halfWidth);
-        solidIds.push(solidId);
+      // Tread (horizontal face) - except for last step
+      if (i < stepCount - 1) {
+        profilePoints.push({ x: stepX + treadDepth, y: stepZ });
       }
     }
 
-    if (solidIds.length === 0) return;
+    // Top of last step - add short landing
+    profilePoints.push({ x: runLength + treadDepth * 0.5, y: totalRise });
 
-    // Create shape representation with all step solids
-    const shapeRepId = this.createMultiSolidShapeRepresentation(solidIds);
+    // Go down to sloped underside
+    profilePoints.push({ x: runLength + treadDepth * 0.5, y: totalRise - IfcExporter.STAIR_SLAB_THICKNESS });
+
+    // Draw the sloped underside (back to start)
+    profilePoints.push({ x: 0, y: -IfcExporter.STAIR_SLAB_THICKNESS });
+
+    // Create the profile and extrude
+    const profileId = this.createStairStepProfile(profilePoints);
+    const solidId = this.createStairStepSolid(profileId, width, halfWidth);
+
+    // Create shape representation with single solid
+    const shapeRepId = this.createShapeRepresentation(solidId, 'Body', 'SweptSolid');
 
     // Create product representation
     const productRepId = this.getNextId();
@@ -1609,12 +1610,12 @@ export class IfcExporter {
    * Profile is in XZ plane, extruded along Y axis (width direction)
    */
   private createStairStepSolid(profileId: number, extrudeLength: number, yOffset: number): number {
-    // Extrusion direction along Y
+    // Extrusion direction: local Z which maps to World -Y (width direction)
     const directionId = this.getNextId();
     this.ifcApi.WriteLine(this.modelId, {
       expressID: directionId,
       type: WebIFC.IFCDIRECTION,
-      DirectionRatios: [{ type: 4, value: 0 }, { type: 4, value: 1 }, { type: 4, value: 0 }],
+      DirectionRatios: [{ type: 4, value: 0 }, { type: 4, value: 0 }, { type: 4, value: 1 }],
     });
 
     // Position: X axis = profile X (run direction), Y axis from yOffset, Z axis = profile Y (height)
@@ -1626,12 +1627,12 @@ export class IfcExporter {
       Coordinates: [{ type: 4, value: 0 }, { type: 4, value: yOffset }, { type: 4, value: 0 }],
     });
 
-    // Axis: Z direction (the profile's normal, which becomes the extrusion reference)
+    // Axis: Profile normal direction - must be -Y so that profile Y maps to world Z
     const axisId = this.getNextId();
     this.ifcApi.WriteLine(this.modelId, {
       expressID: axisId,
       type: WebIFC.IFCDIRECTION,
-      DirectionRatios: [{ type: 4, value: 0 }, { type: 4, value: 1 }, { type: 4, value: 0 }],
+      DirectionRatios: [{ type: 4, value: 0 }, { type: 4, value: -1 }, { type: 4, value: 0 }],
     });
 
     // RefDirection: X direction (along run)

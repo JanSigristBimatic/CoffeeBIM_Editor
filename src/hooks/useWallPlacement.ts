@@ -51,6 +51,7 @@ export function useWallPlacement() {
 
   /**
    * Create a wall from start point to end point
+   * Uses the thickness, height, and alignment from wall placement params
    */
   const createWallSegment = useCallback(
     (startPoint: Point2D, endPoint: Point2D) => {
@@ -63,6 +64,9 @@ export function useWallPlacement() {
         const wall = createWall({
           startPoint,
           endPoint,
+          thickness: wallPlacement.params.thickness,
+          height: wallPlacement.params.height,
+          alignmentSide: wallPlacement.params.alignmentSide,
           storeyId: activeStoreyId,
           elevation: storeyElevation,
         });
@@ -74,7 +78,7 @@ export function useWallPlacement() {
         return false;
       }
     },
-    [activeStoreyId, storeyElevation, addElement]
+    [activeStoreyId, storeyElevation, addElement, wallPlacement.params.thickness, wallPlacement.params.height, wallPlacement.params.alignmentSide]
   );
 
   /**

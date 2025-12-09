@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   ToolType,
   WallPlacementState,
+  WallPlacementParams,
   SlabPlacementState,
   SlabCompletionDialogState,
   DoorPlacementState,
@@ -23,7 +24,7 @@ import type {
 } from '@/types/tools';
 import type { Vector2D } from '@/types/geometry';
 import type { Point2D } from '@/types/geometry';
-import type { DoorType, WindowType, CounterType, StairType } from '@/types/bim';
+import type { DoorType, WindowType, CounterType, StairType, WallAlignmentSide } from '@/types/bim';
 import {
   DEFAULT_DOOR_WIDTH,
   DEFAULT_DOOR_HEIGHT,
@@ -35,6 +36,8 @@ import {
   DEFAULT_COLUMN_WIDTH,
   DEFAULT_COLUMN_DEPTH,
   DEFAULT_WALL_HEIGHT,
+  DEFAULT_WALL_THICKNESS,
+  DEFAULT_WALL_ALIGNMENT,
   DEFAULT_COUNTER_DEPTH,
   DEFAULT_COUNTER_HEIGHT,
   DEFAULT_BAR_COUNTER_HEIGHT,
@@ -82,6 +85,10 @@ interface ToolActions {
   getDistanceTargetPoint: () => Point2D | null;
 
   // Wall placement
+  setWallParams: (params: Partial<WallPlacementParams>) => void;
+  setWallThickness: (thickness: number) => void;
+  setWallHeight: (height: number) => void;
+  setWallAlignmentSide: (alignmentSide: WallAlignmentSide) => void;
   setWallStartPoint: (point: Point2D | null) => void;
   setWallPreviewEndPoint: (point: Point2D | null) => void;
   setWallIsPlacing: (isPlacing: boolean) => void;
@@ -184,7 +191,14 @@ const initialDistanceInput: DistanceInputState = {
   referencePoint: null,
 };
 
+const initialWallPlacementParams: WallPlacementParams = {
+  thickness: DEFAULT_WALL_THICKNESS,
+  height: DEFAULT_WALL_HEIGHT,
+  alignmentSide: DEFAULT_WALL_ALIGNMENT,
+};
+
 const initialWallPlacement: WallPlacementState = {
+  params: initialWallPlacementParams,
   startPoint: null,
   previewEndPoint: null,
   isPlacing: false,
@@ -364,7 +378,11 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
       cursorPosition: null,
       // Reset distance input and placement state when changing tools
       distanceInput: initialDistanceInput,
-      wallPlacement: initialWallPlacement,
+      wallPlacement: {
+        ...initialWallPlacement,
+        // Keep wall params when switching tools
+        params: get().wallPlacement.params,
+      },
       slabPlacement: initialSlabPlacement,
       spacePlacement: initialSpacePlacement,
       doorPlacement: {
@@ -483,6 +501,50 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
   },
 
   // Wall placement
+  setWallParams: (params) =>
+    set((state) => ({
+      wallPlacement: {
+        ...state.wallPlacement,
+        params: {
+          ...state.wallPlacement.params,
+          ...params,
+        },
+      },
+    })),
+
+  setWallThickness: (thickness) =>
+    set((state) => ({
+      wallPlacement: {
+        ...state.wallPlacement,
+        params: {
+          ...state.wallPlacement.params,
+          thickness,
+        },
+      },
+    })),
+
+  setWallHeight: (height) =>
+    set((state) => ({
+      wallPlacement: {
+        ...state.wallPlacement,
+        params: {
+          ...state.wallPlacement.params,
+          height,
+        },
+      },
+    })),
+
+  setWallAlignmentSide: (alignmentSide) =>
+    set((state) => ({
+      wallPlacement: {
+        ...state.wallPlacement,
+        params: {
+          ...state.wallPlacement.params,
+          alignmentSide,
+        },
+      },
+    })),
+
   setWallStartPoint: (point) =>
     set((state) => ({
       wallPlacement: {
@@ -509,9 +571,13 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
     })),
 
   resetWallPlacement: () =>
-    set({
-      wallPlacement: initialWallPlacement,
-    }),
+    set((state) => ({
+      wallPlacement: {
+        ...initialWallPlacement,
+        // Keep wall params when resetting
+        params: state.wallPlacement.params,
+      },
+    })),
 
   // Slab placement
   addSlabPoint: (point) =>
@@ -1100,7 +1166,12 @@ export const useToolStore = create<ToolState & ToolActions>((set, get) => ({
     set({ distanceInput: initialDistanceInput });
 
     if (activeTool === 'wall') {
-      set({ wallPlacement: initialWallPlacement });
+      set((state) => ({
+        wallPlacement: {
+          ...initialWallPlacement,
+          params: state.wallPlacement.params,
+        },
+      }));
     }
     if (activeTool === 'slab') {
       set({ slabPlacement: initialSlabPlacement });

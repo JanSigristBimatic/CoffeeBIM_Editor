@@ -162,12 +162,11 @@ export function SpaceLabel({
 }) {
   const { spaceData } = element;
 
-  if (!spaceData || !spaceData.boundaryPolygon || spaceData.boundaryPolygon.length < 3) {
-    return null;
-  }
-
-  // Calculate centroid from boundary polygon
+  // Calculate centroid from boundary polygon - must be before any early returns
   const centroid = useMemo(() => {
+    if (!spaceData?.boundaryPolygon || spaceData.boundaryPolygon.length < 3) {
+      return { x: 0, y: 0 };
+    }
     const polygon = spaceData.boundaryPolygon;
     let cx = 0;
     let cy = 0;
@@ -176,7 +175,11 @@ export function SpaceLabel({
       cy += p.y;
     }
     return { x: cx / polygon.length, y: cy / polygon.length };
-  }, [spaceData.boundaryPolygon]);
+  }, [spaceData?.boundaryPolygon]);
+
+  if (!spaceData || !spaceData.boundaryPolygon || spaceData.boundaryPolygon.length < 3) {
+    return null;
+  }
 
   // Format area to 1 decimal place
   const areaText = spaceData.area

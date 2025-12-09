@@ -1,8 +1,25 @@
 import { useMemo, useRef } from 'react';
 import { Mesh, Shape, Path, ExtrudeGeometry, MeshStandardMaterial, Euler } from 'three';
-import type { BimElement, Opening } from '@/types/bim';
+import type { BimElement, Opening, WallAlignmentSide } from '@/types/bim';
 import { useDragElement } from '../TransformGizmo';
 import { calculateWallGeometry } from '@/lib/geometry';
+
+/**
+ * Calculate profile Z-offset based on alignment side
+ */
+function getProfileOffset(alignmentSide: WallAlignmentSide, thickness: number): { min: number; max: number } {
+  const halfThickness = thickness / 2;
+
+  switch (alignmentSide) {
+    case 'left':
+      return { min: 0, max: thickness };
+    case 'right':
+      return { min: -thickness, max: 0 };
+    case 'center':
+    default:
+      return { min: -halfThickness, max: halfThickness };
+  }
+}
 
 interface WallMeshProps {
   element: BimElement;
@@ -63,7 +80,7 @@ export function WallMesh({ element, selected, isGhost = false, ghostOpacity = 0.
   const geometry = useMemo(() => {
     if (!wallData) return null;
 
-    const { startPoint, endPoint, thickness, height, openings } = wallData;
+    const { startPoint, endPoint, thickness, height, openings, alignmentSide } = wallData;
 
     // Calculate wall geometry using centralized utility
     const wallGeo = calculateWallGeometry(startPoint, endPoint);
@@ -104,8 +121,9 @@ export function WallMesh({ element, selected, isGhost = false, ghostOpacity = 0.
 
     const extrudeGeo = new ExtrudeGeometry(shape, extrudeSettings);
 
-    // Center the geometry on thickness (so wall centerline is at Z=0 in local space)
-    extrudeGeo.translate(0, 0, -halfThickness);
+    // Position based on alignment (offset.min is where wall starts in local Z)
+    const offset = getProfileOffset(alignmentSide, thickness);
+    extrudeGeo.translate(0, 0, offset.min);
 
     return extrudeGeo;
   }, [wallData]);

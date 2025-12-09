@@ -28,7 +28,7 @@ export function SlabMesh({ element, selected, isGhost = false, ghostOpacity = 0.
       return null;
     }
 
-    const { outline, thickness } = slabData;
+    const { outline, thickness, slabType } = slabData;
 
     // Create shape from outline points
     // Z-up: XY plane is horizontal, shape lies flat at Z=0
@@ -45,7 +45,7 @@ export function SlabMesh({ element, selected, isGhost = false, ghostOpacity = 0.
     }
     shape.closePath();
 
-    // Extrude downward (into the floor) along -Z
+    // Extrude along Z axis
     const extrudeSettings = {
       steps: 1,
       depth: thickness,
@@ -54,8 +54,15 @@ export function SlabMesh({ element, selected, isGhost = false, ghostOpacity = 0.
 
     const geo = new ExtrudeGeometry(shape, extrudeSettings);
 
-    // Move geometry down so top surface is at Z=0
-    geo.translate(0, 0, -thickness);
+    // Floor: extrude downward (top surface at storey elevation)
+    // Ceiling: extrude upward (bottom surface at storey elevation)
+    if (slabType === 'ceiling') {
+      // Ceiling: geometry already extrudes in +Z, no translation needed
+      // Bottom surface is at Z=0 (storey elevation)
+    } else {
+      // Floor (default): move geometry down so top surface is at Z=0
+      geo.translate(0, 0, -thickness);
+    }
 
     return geo;
   }, [slabData]);
@@ -81,6 +88,10 @@ export function SlabMesh({ element, selected, isGhost = false, ghostOpacity = 0.
 
   if (!geometry || !slabData) return null;
 
+  // Calculate final Z position including elevation offset
+  const elevationOffset = slabData.elevationOffset ?? 0;
+  const finalZ = element.placement.position.z + elevationOffset;
+
   // Z-up: XY plane is horizontal, no rotation needed
   // Geometry is already translated so top surface is at Z=0
   return (
@@ -88,7 +99,7 @@ export function SlabMesh({ element, selected, isGhost = false, ghostOpacity = 0.
       ref={meshRef}
       geometry={geometry}
       material={material}
-      position={[0, 0, element.placement.position.z]}
+      position={[0, 0, finalZ]}
       rotation={[0, 0, 0]}
       {...effectiveHandlers}
       receiveShadow={!isGhost}

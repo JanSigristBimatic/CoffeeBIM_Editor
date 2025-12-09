@@ -9,7 +9,8 @@
       "Bash(npm run build:*)",
       "Bash(git add:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: enhance 2D canvas, space detection, and placement hooks\n\nImprovements:\n- Extended Canvas2D with improved rendering and interactions\n- Enhanced Space element with better boundary detection\n- Improved SpaceProperties panel with more options\n- Added storey elevation support to wall/slab placement hooks\n- Updated IFC exporter for space elements\n- Documentation updates in CLAUDE.md\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npx vercel:*)"
     ],
     "deny": [],
     "ask": []

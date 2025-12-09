@@ -13,11 +13,9 @@ interface DimensionLabelProps {
  * Uses Html from drei for billboard-style rendering that always faces the camera
  */
 export function DimensionLabel({ dimension, visible = true }: DimensionLabelProps) {
-  if (!visible) return null;
-
   const { position3D, displayText, type } = dimension;
 
-  // Style based on dimension type
+  // Style based on dimension type - must be before any early returns
   const style = useMemo(() => {
     const isArea = type === 'space-area';
 
@@ -27,6 +25,8 @@ export function DimensionLabel({ dimension, visible = true }: DimensionLabelProp
       padding: isArea ? '6px 12px' : '4px 8px',
     };
   }, [type]);
+
+  if (!visible) return null;
 
   // Position in Z-up coordinate system (project uses Z-up directly)
   const position: [number, number, number] = [

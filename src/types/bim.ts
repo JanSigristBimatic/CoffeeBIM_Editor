@@ -280,6 +280,23 @@ export interface Opening {
 }
 
 /**
+ * Wall alignment side - defines which edge of the wall the reference line represents
+ * - 'left': Reference line is on the left side (looking from start to end)
+ * - 'center': Reference line is the centerline (traditional)
+ * - 'right': Reference line is on the right side (looking from start to end)
+ */
+export type WallAlignmentSide = 'left' | 'center' | 'right';
+
+/**
+ * German labels for Wall Alignment Sides
+ */
+export const WALL_ALIGNMENT_LABELS: Record<WallAlignmentSide, string> = {
+  left: 'Links (Innenkante)',
+  center: 'Mitte',
+  right: 'Rechts (Aussenkante)',
+};
+
+/**
  * Wall-specific data
  */
 export interface WallData {
@@ -288,6 +305,8 @@ export interface WallData {
   thickness: number;
   height: number;
   openings: Opening[];
+  /** Which edge the reference line (startPoint/endPoint) represents */
+  alignmentSide: WallAlignmentSide;
 }
 
 /**
@@ -358,6 +377,8 @@ export interface SlabData {
   slabType: 'floor' | 'ceiling';
   thickness: number;
   outline: Point2D[];
+  /** Vertical offset from storey elevation (positive = up, negative = down) */
+  elevationOffset?: number;
 }
 
 /**
@@ -667,6 +688,7 @@ export interface StoreyInfo {
 
 export const DEFAULT_WALL_THICKNESS = 0.2; // meters
 export const DEFAULT_WALL_HEIGHT = 3.0; // meters
+export const DEFAULT_WALL_ALIGNMENT: WallAlignmentSide = 'left'; // Default to left edge for precise room boundaries
 
 export const DEFAULT_DOOR_WIDTH = 0.9; // meters (single door)
 export const DEFAULT_DOUBLE_DOOR_WIDTH = 1.8; // meters (double door)

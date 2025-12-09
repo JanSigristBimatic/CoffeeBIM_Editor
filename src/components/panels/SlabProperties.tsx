@@ -51,6 +51,20 @@ export function SlabProperties({ element }: SlabPropertiesProps) {
     [slabData, element, updateElement]
   );
 
+  // Update elevation offset
+  const handleOffsetChange = useCallback(
+    (newOffset: number) => {
+      if (!slabData) return;
+
+      // Clamp offset to reasonable range (-10m to +10m)
+      const clampedOffset = Math.max(-10, Math.min(10, newOffset));
+
+      const updates = updateSlabDimensions(element, { elevationOffset: clampedOffset });
+      updateElement(element.id, updates);
+    },
+    [slabData, element, updateElement]
+  );
+
   if (!slabData) {
     return <div className="text-sm text-muted-foreground">Boden-Daten nicht verfügbar</div>;
   }
@@ -94,6 +108,23 @@ export function SlabProperties({ element }: SlabPropertiesProps) {
           max={1}
           className="w-full mt-1 px-2 py-1.5 text-sm border rounded bg-background"
         />
+      </div>
+
+      {/* Elevation Offset */}
+      <div>
+        <label className="text-xs text-muted-foreground">Höhenversatz (m)</label>
+        <input
+          type="number"
+          value={slabData.elevationOffset ?? 0}
+          onChange={(e) => handleOffsetChange(parseFloat(e.target.value) || 0)}
+          step={0.1}
+          min={-10}
+          max={10}
+          className="w-full mt-1 px-2 py-1.5 text-sm border rounded bg-background"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          Positiv = nach oben, Negativ = nach unten
+        </p>
       </div>
 
       {/* Outline Points (read-only info) */}

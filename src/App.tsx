@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { MapPin } from 'lucide-react';
 import { SplitView, Toolbar, SlabCompleteDialog, DistanceInputOverlay } from '@/components/editor';
-import { PropertyPanel, HierarchyPanel, DoorParameterPanel, WindowParameterPanel, ColumnParameterPanel, CounterParameterPanel, StairParameterPanel } from '@/components/panels';
+import { PropertyPanel, HierarchyPanel, WallParameterPanel, DoorParameterPanel, WindowParameterPanel, ColumnParameterPanel, CounterParameterPanel, StairParameterPanel } from '@/components/panels';
+import { BimaticLink } from '@/components/ui/BimaticLink';
 import { useKeyboardShortcuts, useStorageSync } from '@/hooks';
 import { useViewStore, useToolStore, useProjectStore } from '@/store';
 import { requestPersistentStorage } from '@/lib/storage';
@@ -76,9 +77,12 @@ function App() {
   return (
     <div className="h-screen w-screen flex flex-col bg-background">
       {/* Header - CoffeeBIM Gold Gradient */}
-      <header className="h-12 border-b flex items-center px-4 shrink-0 bg-gradient-to-r from-primary to-secondary">
-        <h1 className="text-lg font-bold text-primary-foreground">CoffeeBIM Editor</h1>
-        <span className="ml-2 text-xs text-primary-foreground/70">v0.1.0</span>
+      <header className="h-12 border-b flex items-center justify-between px-4 shrink-0 bg-gradient-to-r from-primary to-secondary">
+        <div className="flex items-center">
+          <h1 className="text-lg font-bold text-primary-foreground">CoffeeBIM Editor</h1>
+          <span className="ml-2 text-xs text-primary-foreground/70">v0.1.0</span>
+        </div>
+        <BimaticLink />
       </header>
 
       {/* Toolbar */}
@@ -96,6 +100,9 @@ function App() {
           {/* View Content */}
           <div className="flex-1 relative">
             <SplitView />
+
+            {/* Wall Parameter Panel (floating, shows when wall tool active) */}
+            <WallParameterPanel />
 
             {/* Door Parameter Panel (floating, shows when door tool active) */}
             <DoorParameterPanel />

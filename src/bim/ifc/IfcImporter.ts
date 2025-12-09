@@ -19,6 +19,7 @@ import type {
 import {
   DEFAULT_WALL_HEIGHT,
   DEFAULT_WALL_THICKNESS,
+  DEFAULT_WALL_ALIGNMENT,
   DEFAULT_DOOR_HEIGHT,
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_SILL_HEIGHT,
@@ -404,6 +405,7 @@ export class IfcImporter {
       thickness: wallGeom.thickness,
       height: wallGeom.height,
       openings: [],
+      alignmentSide: DEFAULT_WALL_ALIGNMENT,
     };
 
     const element: BimElement = {
@@ -462,7 +464,7 @@ export class IfcImporter {
   }
 
   private extractFromExtrudedSolid(
-    solid: any,
+    solid: { Depth?: { value?: number }; SweptArea?: { value?: number } },
     placement: { position: Vector3; rotation: number }
   ): { startPoint: Point2D; endPoint: Point2D; thickness: number; height: number } | null {
     try {
@@ -1097,7 +1099,7 @@ export class IfcImporter {
             this.idMapping.elements.set(expressId, item.id);
           }
         }
-      } catch (err) {
+      } catch {
         // Silently skip non-furniture proxies
       }
     }
@@ -1493,9 +1495,9 @@ export class IfcImporter {
           const z = vertices[v + 2] ?? 0;
 
           // Apply transformation (with null-safety)
-          let tx = (transform[0] ?? 1) * x + (transform[4] ?? 0) * y + (transform[8] ?? 0) * z + (transform[12] ?? 0);
-          let ty = (transform[1] ?? 0) * x + (transform[5] ?? 1) * y + (transform[9] ?? 0) * z + (transform[13] ?? 0);
-          let tz = (transform[2] ?? 0) * x + (transform[6] ?? 0) * y + (transform[10] ?? 1) * z + (transform[14] ?? 0);
+          const tx = (transform[0] ?? 1) * x + (transform[4] ?? 0) * y + (transform[8] ?? 0) * z + (transform[12] ?? 0);
+          const ty = (transform[1] ?? 0) * x + (transform[5] ?? 1) * y + (transform[9] ?? 0) * z + (transform[13] ?? 0);
+          const tz = (transform[2] ?? 0) * x + (transform[6] ?? 0) * y + (transform[10] ?? 1) * z + (transform[14] ?? 0);
 
           // Apply coordinate system transformation
           const transformed = this.transformCoords(tx, ty, tz);
@@ -1619,24 +1621,24 @@ export class IfcImporter {
     };
   }
 
-  private getStringValue(value: any): string | undefined {
+  private getStringValue(value: unknown): string | undefined {
     if (!value) return undefined;
     if (typeof value === 'string') return value;
-    if (typeof value === 'object' && value.value) return String(value.value);
+    if (typeof value === 'object' && value !== null && 'value' in value) return String((value as { value: unknown }).value);
     return undefined;
   }
 
-  private getNumberValue(value: any): number | undefined {
+  private getNumberValue(value: unknown): number | undefined {
     if (value === null || value === undefined) return undefined;
     if (typeof value === 'number') return value;
-    if (typeof value === 'object' && value.value !== undefined) {
-      const num = Number(value.value);
+    if (typeof value === 'object' && value !== null && 'value' in value) {
+      const num = Number((value as { value: unknown }).value);
       return isNaN(num) ? undefined : num;
     }
     return undefined;
   }
 
-  private parseLatLong(value: any): number | undefined {
+  private parseLatLong(value: unknown): number | undefined {
     if (!value || !Array.isArray(value)) return undefined;
 
     // IFC lat/long is stored as [degrees, minutes, seconds, fraction]

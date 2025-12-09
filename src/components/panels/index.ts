@@ -1,5 +1,6 @@
 export { PropertyPanel } from './PropertyPanel';
 export { HierarchyPanel } from './HierarchyPanel';
+export { WallParameterPanel } from './WallParameterPanel';
 export { DoorParameterPanel } from './DoorParameterPanel';
 export { WindowParameterPanel } from './WindowParameterPanel';
 export { ColumnParameterPanel } from './ColumnParameterPanel';

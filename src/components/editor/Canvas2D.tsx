@@ -4,8 +4,17 @@ import type { Stage as StageType } from 'konva/lib/Stage';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useElementStore, useViewStore, useSelectionStore, useProjectStore, useToolStore } from '@/store';
 import type { BimElement } from '@/types/bim';
-import { DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT } from '@/types/bim';
+import { DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT, DEFAULT_WALL_ALIGNMENT, DEFAULT_COUNTER_DEPTH, DEFAULT_COUNTER_HEIGHT } from '@/types/bim';
+import { createColumn } from '@/bim/elements/Column';
+import { createStair, calculateSteps } from '@/bim/elements/Stair';
+import { createDoor, createOpeningFromDoor } from '@/bim/elements/Door';
+import { createWindow, createOpeningFromWindow } from '@/bim/elements/Window';
+import { getPositionOnWall, calculateWallLength } from '@/bim/elements/Wall';
+import { createFurniture } from '@/bim/elements';
+import { getAssetById, getAssetCategoryForItem, mapAssetCategoryToFurnitureCategory } from '@/lib/assets';
 import type { Point2D } from '@/types/geometry';
+import { calculatePolygonArea } from '@/lib/geometry/dimensions';
+import { distance2D } from '@/lib/geometry/math';
 import {
   generateElementDimensions,
   calculateDimensionLinePoints,
@@ -49,9 +58,9 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
 
   // Store hooks
   const { cad2dZoom, cad2dPanX, cad2dPanY, setCad2dZoom, setCad2dPan, showGrid, gridSize, showDimensions, dimensionSettings, snapSettings } = useViewStore();
-  const { getAllElements, getElementsByStorey, addElement } = useElementStore();
+  const { getAllElements, getElementsByStorey, addElement, updateElement, getWallsForStorey } = useElementStore();
   const { selectedIds, select, clearSelection, toggleSelection } = useSelectionStore();
-  const { activeStoreyId } = useProjectStore();
+  const { activeStoreyId, storeys } = useProjectStore();
   const {
     activeTool,
     wallPlacement,
@@ -60,6 +69,40 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     resetWallPlacement,
     setCursorPosition,
     cancelCurrentOperation,
+    // Slab placement
+    slabPlacement,
+    addSlabPoint,
+    setSlabPreviewPoint,
+    openSlabCompletionDialog,
+    // Space placement
+    spacePlacement,
+    addSpacePoint,
+    setSpacePreviewPoint,
+    resetSpacePlacement,
+    // Counter placement
+    counterPlacement,
+    addCounterPoint,
+    setCounterPreviewPoint,
+    resetCounterPlacement,
+    // Column placement
+    columnPlacement,
+    setColumnPreview,
+    resetColumnPlacement,
+    // Stair placement
+    stairPlacement,
+    setStairStartPoint,
+    setStairPreviewEndPoint,
+    setStairRotation,
+    resetStairPlacement,
+    // Door placement
+    doorPlacement,
+    resetDoorPlacement,
+    // Window placement
+    windowPlacement,
+    resetWindowPlacement,
+    // Asset placement
+    assetPlacement,
+    setAssetPreview,
   } = useToolStore();
 
   // Local state for cursor position in world coordinates
@@ -115,18 +158,173 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     [cad2dZoom, cad2dPanX, cad2dPanY, dimensions]
   );
 
-  // Apply grid snapping if enabled
-  const applyGridSnap = useCallback(
-    (point: Point2D): Point2D => {
-      if (!snapSettings.enabled || !snapSettings.grid) {
-        return point;
+  // Snap tolerance in world units (meters)
+  const SNAP_TOLERANCE = 0.3; // 30cm
+  // Ortho snap angle tolerance in degrees
+  const ORTHO_ANGLE_TOLERANCE = 5;
+
+  // Apply orthogonal constraint (horizontal/vertical) relative to reference point
+  const applyOrthoConstraint = useCallback(
+    (point: Point2D, refPoint: Point2D): Point2D => {
+      const dx = point.x - refPoint.x;
+      const dy = point.y - refPoint.y;
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+      // Normalize angle to 0-360
+      const normalizedAngle = ((angle % 360) + 360) % 360;
+
+      // Check if close to horizontal (0° or 180°)
+      if (normalizedAngle < ORTHO_ANGLE_TOLERANCE || normalizedAngle > 360 - ORTHO_ANGLE_TOLERANCE ||
+          Math.abs(normalizedAngle - 180) < ORTHO_ANGLE_TOLERANCE) {
+        // Snap to horizontal
+        return { x: point.x, y: refPoint.y };
       }
+
+      // Check if close to vertical (90° or 270°)
+      if (Math.abs(normalizedAngle - 90) < ORTHO_ANGLE_TOLERANCE ||
+          Math.abs(normalizedAngle - 270) < ORTHO_ANGLE_TOLERANCE) {
+        // Snap to vertical
+        return { x: refPoint.x, y: point.y };
+      }
+
+      // Not close to ortho angle, return original point
+      return point;
+    },
+    []
+  );
+
+  /**
+   * Calculate perpendicular foot point from a point to a line segment
+   * Returns the point on the line segment that is closest to the given point
+   * (which is the perpendicular projection if it falls within the segment)
+   */
+  const getPerpendicularPoint = useCallback(
+    (point: Point2D, lineStart: Point2D, lineEnd: Point2D): { point: Point2D; isOnSegment: boolean } => {
+      const dx = lineEnd.x - lineStart.x;
+      const dy = lineEnd.y - lineStart.y;
+      const lengthSq = dx * dx + dy * dy;
+
+      if (lengthSq === 0) {
+        // Line segment is a point
+        return { point: { ...lineStart }, isOnSegment: true };
+      }
+
+      // Parameter t for the projection point on the infinite line
+      // t = dot(point - lineStart, lineEnd - lineStart) / |lineEnd - lineStart|^2
+      const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lengthSq;
+
+      // Check if projection falls within the segment
+      const isOnSegment = t >= 0 && t <= 1;
+
+      // Clamp t to [0, 1] to get nearest point on segment
+      const tClamped = Math.max(0, Math.min(1, t));
+
       return {
-        x: Math.round(point.x / gridSize) * gridSize,
-        y: Math.round(point.y / gridSize) * gridSize,
+        point: {
+          x: lineStart.x + tClamped * dx,
+          y: lineStart.y + tClamped * dy,
+        },
+        isOnSegment,
       };
     },
-    [snapSettings, gridSize]
+    []
+  );
+
+  // Apply all snap modes (endpoint, midpoint, perpendicular, ortho, grid)
+  // refPoint is optional - used for orthogonal and perpendicular snapping relative to last point
+  const applySnap = useCallback(
+    (point: Point2D, refPoint?: Point2D): Point2D => {
+      if (!snapSettings.enabled) {
+        return point;
+      }
+
+      let workingPoint = point;
+
+      // Apply orthogonal constraint first if enabled and we have a reference point
+      if (snapSettings.orthogonal && refPoint) {
+        workingPoint = applyOrthoConstraint(point, refPoint);
+      }
+
+      let bestPoint = workingPoint;
+      let bestDistance = Infinity;
+
+      // Collect all walls
+      const walls = elements.filter((e) => e.type === 'wall' && e.wallData);
+
+      // Check endpoint snapping
+      if (snapSettings.endpoint) {
+        for (const wall of walls) {
+          if (!wall.wallData) continue;
+          const { startPoint, endPoint } = wall.wallData;
+
+          // Check start point
+          const distStart = distance2D(workingPoint, startPoint);
+          if (distStart < SNAP_TOLERANCE && distStart < bestDistance) {
+            bestDistance = distStart;
+            bestPoint = { ...startPoint };
+          }
+
+          // Check end point
+          const distEnd = distance2D(workingPoint, endPoint);
+          if (distEnd < SNAP_TOLERANCE && distEnd < bestDistance) {
+            bestDistance = distEnd;
+            bestPoint = { ...endPoint };
+          }
+        }
+      }
+
+      // Check midpoint snapping
+      if (snapSettings.midpoint) {
+        for (const wall of walls) {
+          if (!wall.wallData) continue;
+          const { startPoint, endPoint } = wall.wallData;
+
+          const midPoint = {
+            x: (startPoint.x + endPoint.x) / 2,
+            y: (startPoint.y + endPoint.y) / 2,
+          };
+
+          const distMid = distance2D(workingPoint, midPoint);
+          if (distMid < SNAP_TOLERANCE && distMid < bestDistance) {
+            bestDistance = distMid;
+            bestPoint = midPoint;
+          }
+        }
+      }
+
+      // Check perpendicular snapping (Lot auf Linie)
+      // Finds the point on a wall where a line from refPoint would be perpendicular
+      if (snapSettings.perpendicular && refPoint) {
+        for (const wall of walls) {
+          if (!wall.wallData) continue;
+          const { startPoint, endPoint } = wall.wallData;
+
+          // Get the perpendicular foot point from refPoint to the wall line
+          const { point: perpPoint, isOnSegment } = getPerpendicularPoint(refPoint, startPoint, endPoint);
+
+          // Only consider if the perpendicular foot is actually on the wall segment
+          if (isOnSegment) {
+            // Check if cursor is close to this perpendicular point
+            const distPerp = distance2D(workingPoint, perpPoint);
+            if (distPerp < SNAP_TOLERANCE && distPerp < bestDistance) {
+              bestDistance = distPerp;
+              bestPoint = perpPoint;
+            }
+          }
+        }
+      }
+
+      // If no endpoint/midpoint/perpendicular snap found, use grid snap (but preserve ortho constraint)
+      if (bestDistance === Infinity && snapSettings.grid) {
+        return {
+          x: Math.round(workingPoint.x / gridSize) * gridSize,
+          y: Math.round(workingPoint.y / gridSize) * gridSize,
+        };
+      }
+
+      return bestPoint;
+    },
+    [snapSettings, gridSize, elements, applyOrthoConstraint, getPerpendicularPoint]
   );
 
   // CAD Navigation: Zoom with mouse wheel
@@ -199,7 +397,22 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
 
         // Convert screen to world coordinates
         const worldPos = screenToWorld(pointer.x, pointer.y);
-        const snappedPos = applyGridSnap(worldPos);
+
+        // Determine reference point for ortho snapping based on active tool
+        let refPoint: Point2D | undefined;
+        if (activeTool === 'wall' && wallPlacement.isPlacing && wallPlacement.startPoint) {
+          refPoint = wallPlacement.startPoint;
+        } else if (activeTool === 'slab' && slabPlacement.points.length > 0) {
+          refPoint = slabPlacement.points[slabPlacement.points.length - 1];
+        } else if (activeTool === 'space-draw' && spacePlacement.points.length > 0) {
+          refPoint = spacePlacement.points[spacePlacement.points.length - 1];
+        } else if (activeTool === 'counter' && counterPlacement.points.length > 0) {
+          refPoint = counterPlacement.points[counterPlacement.points.length - 1];
+        } else if (activeTool === 'stair' && stairPlacement.startPoint) {
+          refPoint = stairPlacement.startPoint;
+        }
+
+        const snappedPos = applySnap(worldPos, refPoint);
 
         // Update local cursor state
         setCursorWorldPos(snappedPos);
@@ -207,13 +420,36 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         // Update global cursor position for snap preview
         setCursorPosition(snappedPos);
 
-        // Update wall preview end point if placing wall
+        // Update preview points based on active tool
         if (activeTool === 'wall' && wallPlacement.isPlacing) {
           setWallPreviewEndPoint(snappedPos);
+        } else if (activeTool === 'slab' && slabPlacement.points.length > 0) {
+          setSlabPreviewPoint(snappedPos);
+        } else if (activeTool === 'space-draw' && spacePlacement.points.length > 0) {
+          setSpacePreviewPoint(snappedPos);
+        } else if (activeTool === 'counter' && counterPlacement.points.length > 0) {
+          setCounterPreviewPoint(snappedPos);
+        } else if (activeTool === 'stair' && stairPlacement.startPoint) {
+          // Update stair preview and calculate rotation
+          setStairPreviewEndPoint(snappedPos);
+          const dx = snappedPos.x - stairPlacement.startPoint.x;
+          const dy = snappedPos.y - stairPlacement.startPoint.y;
+          const rotation = Math.atan2(dy, dx);
+          setStairRotation(rotation);
+        } else if (activeTool === 'column') {
+          setColumnPreview(snappedPos, true);
+        } else if (activeTool === 'asset' && assetPlacement.params.assetId) {
+          setAssetPreview(snappedPos, true);
         }
       }
     },
-    [isPanning, lastPanPos, cad2dPanX, cad2dPanY, setCad2dPan, activeTool, screenToWorld, applyGridSnap, setCursorPosition, wallPlacement.isPlacing, setWallPreviewEndPoint]
+    [isPanning, lastPanPos, cad2dPanX, cad2dPanY, setCad2dPan, activeTool, screenToWorld, applySnap, setCursorPosition,
+     wallPlacement.isPlacing, wallPlacement.startPoint, setWallPreviewEndPoint,
+     slabPlacement.points, setSlabPreviewPoint,
+     spacePlacement.points, setSpacePreviewPoint,
+     counterPlacement.points, setCounterPreviewPoint,
+     stairPlacement.startPoint, setStairPreviewEndPoint, setStairRotation,
+     setColumnPreview, assetPlacement.params.assetId, setAssetPreview]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -239,6 +475,480 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
       }
     },
     [activeTool, select, toggleSelection]
+  );
+
+  // Check if point is close to first point (for closing polygon)
+  const isCloseToFirstPoint = useCallback(
+    (point: Point2D, points: Point2D[]): boolean => {
+      if (points.length < 3) return false;
+      const firstPoint = points[0];
+      if (!firstPoint) return false;
+      return distance2D(point, firstPoint) < SNAP_TOLERANCE;
+    },
+    []
+  );
+
+  // Handle slab tool click - polygon drawing
+  const handleSlabClick = useCallback(
+    (point: Point2D) => {
+      // Check if we should close the polygon
+      if (isCloseToFirstPoint(point, slabPlacement.points)) {
+        if (slabPlacement.points.length >= 3) {
+          openSlabCompletionDialog([...slabPlacement.points]);
+        }
+        return;
+      }
+      // Add point to polygon
+      addSlabPoint(point);
+    },
+    [slabPlacement.points, isCloseToFirstPoint, addSlabPoint, openSlabCompletionDialog]
+  );
+
+  // Handle slab double-click - finish polygon
+  const handleSlabDoubleClick = useCallback(() => {
+    if (slabPlacement.points.length >= 3) {
+      openSlabCompletionDialog([...slabPlacement.points]);
+    }
+  }, [slabPlacement.points, openSlabCompletionDialog]);
+
+  // Handle space tool click - polygon drawing
+  const handleSpaceClick = useCallback(
+    (point: Point2D) => {
+      // Check if we should close the polygon
+      if (isCloseToFirstPoint(point, spacePlacement.points)) {
+        if (spacePlacement.points.length >= 3) {
+          // Create the space element
+          const spaceId = crypto.randomUUID();
+          const polygon = [...spacePlacement.points];
+          const area = calculatePolygonArea(polygon);
+
+          addElement({
+            id: spaceId,
+            type: 'space',
+            name: `Space ${spaceId.slice(0, 4)}`,
+            geometry: {
+              profile: polygon,
+              height: DEFAULT_WALL_HEIGHT,
+              direction: { x: 0, y: 0, z: 1 },
+            },
+            placement: {
+              position: { x: 0, y: 0, z: 0 },
+              rotation: { x: 0, y: 0, z: 0, w: 1 },
+            },
+            properties: [],
+            parentId: activeStoreyId,
+            spaceData: {
+              boundaryPolygon: polygon,
+              area: area,
+              perimeter: 0,
+              spaceType: 'INTERNAL',
+              boundingWallIds: [],
+              autoDetected: false,
+            },
+          });
+
+          resetSpacePlacement();
+        }
+        return;
+      }
+      // Add point to polygon
+      addSpacePoint(point);
+    },
+    [spacePlacement.points, isCloseToFirstPoint, addSpacePoint, addElement, activeStoreyId, resetSpacePlacement]
+  );
+
+  // Handle space double-click - finish polygon
+  const handleSpaceDoubleClick = useCallback(() => {
+    if (spacePlacement.points.length >= 3) {
+      const spaceId = crypto.randomUUID();
+      const polygon = [...spacePlacement.points];
+      const area = calculatePolygonArea(polygon);
+
+      addElement({
+        id: spaceId,
+        type: 'space',
+        name: `Space ${spaceId.slice(0, 4)}`,
+        geometry: {
+          profile: polygon,
+          height: DEFAULT_WALL_HEIGHT,
+          direction: { x: 0, y: 0, z: 1 },
+        },
+        placement: {
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+        },
+        properties: [],
+        parentId: activeStoreyId,
+        spaceData: {
+          boundaryPolygon: polygon,
+          area: area,
+          perimeter: 0,
+          spaceType: 'INTERNAL',
+          boundingWallIds: [],
+          autoDetected: false,
+        },
+      });
+
+      resetSpacePlacement();
+    }
+  }, [spacePlacement.points, addElement, activeStoreyId, resetSpacePlacement]);
+
+  // Handle counter tool click - path drawing
+  const handleCounterClick = useCallback(
+    (point: Point2D) => {
+      // Add point to path
+      addCounterPoint(point);
+    },
+    [addCounterPoint]
+  );
+
+  // Handle counter double-click - finish path and create counter
+  const handleCounterDoubleClick = useCallback(() => {
+    if (counterPlacement.points.length >= 2) {
+      const counterId = crypto.randomUUID();
+      const path = [...counterPlacement.points];
+
+      addElement({
+        id: counterId,
+        type: 'counter',
+        name: `Counter ${counterId.slice(0, 4)}`,
+        geometry: {
+          profile: path,
+          height: DEFAULT_COUNTER_HEIGHT,
+          direction: { x: 0, y: 0, z: 1 },
+        },
+        placement: {
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+        },
+        properties: [],
+        parentId: activeStoreyId,
+        counterData: {
+          path: path,
+          depth: DEFAULT_COUNTER_DEPTH,
+          height: DEFAULT_COUNTER_HEIGHT,
+          topThickness: 0.04,
+          overhang: 0.1,
+          kickHeight: 0.1,
+          kickRecess: 0.05,
+          counterType: 'standard',
+          hasFootrest: false,
+          footrestHeight: 0.2,
+        },
+      });
+
+      resetCounterPlacement();
+    }
+  }, [counterPlacement.points, addElement, activeStoreyId, resetCounterPlacement]);
+
+  // Get storey elevation for element placement
+  const activeStorey = storeys.find(s => s.id === activeStoreyId);
+  const storeyElevation = activeStorey?.elevation ?? 0;
+
+  // Get walls for current storey (for door/window placement)
+  const walls = activeStoreyId ? getWallsForStorey(activeStoreyId) : [];
+
+  // Find wall at point (for door/window placement)
+  const findWallAtPoint = useCallback(
+    (point: Point2D): { wall: BimElement; position: number } | null => {
+      for (const wall of walls) {
+        const position = getPositionOnWall(wall, point, 0.5);
+        if (position !== null) {
+          return { wall, position };
+        }
+      }
+      return null;
+    },
+    [walls]
+  );
+
+  // Handle column tool click - single click placement
+  const handleColumnClick = useCallback(
+    (point: Point2D) => {
+      if (!activeStoreyId) {
+        console.warn('No active storey selected');
+        return;
+      }
+
+      try {
+        const column = createColumn({
+          position: point,
+          storeyId: activeStoreyId,
+          elevation: storeyElevation,
+          profileType: columnPlacement.params.profileType,
+          width: columnPlacement.params.width,
+          depth: columnPlacement.params.depth,
+          height: columnPlacement.params.height,
+        });
+
+        addElement(column);
+        console.log('Column placed at position', point);
+        resetColumnPlacement();
+      } catch (error) {
+        console.error('Could not create column:', error);
+      }
+    },
+    [activeStoreyId, storeyElevation, columnPlacement.params, addElement, resetColumnPlacement]
+  );
+
+  // Handle stair tool click - two-click placement (start + direction)
+  const handleStairClick = useCallback(
+    (point: Point2D) => {
+      if (!stairPlacement.startPoint) {
+        // First click - set start point
+        setStairStartPoint(point);
+        setStairPreviewEndPoint(point);
+      } else {
+        // Second click - create stair with current rotation
+        if (!activeStoreyId || !activeStorey) {
+          console.warn('No active storey selected');
+          return;
+        }
+
+        // Find target storey (next storey above or below)
+        const sortedStoreys = [...storeys].sort((a, b) => a.elevation - b.elevation);
+        const activeIndex = sortedStoreys.findIndex((s) => s.id === activeStoreyId);
+        let targetStorey = stairPlacement.params.targetStoreyId
+          ? storeys.find((s) => s.id === stairPlacement.params.targetStoreyId)
+          : null;
+
+        if (!targetStorey && activeIndex >= 0 && activeIndex < sortedStoreys.length - 1) {
+          targetStorey = sortedStoreys[activeIndex + 1];
+        }
+
+        if (!targetStorey) {
+          console.warn('No target storey found for stairs');
+          resetStairPlacement();
+          return;
+        }
+
+        const isGoingUp = targetStorey.elevation > activeStorey.elevation;
+        const totalRise = Math.abs(targetStorey.elevation - activeStorey.elevation);
+
+        try {
+          const stair = createStair({
+            position: stairPlacement.startPoint,
+            rotation: stairPlacement.rotation,
+            width: stairPlacement.params.width,
+            totalRise,
+            bottomStoreyId: isGoingUp ? activeStoreyId : targetStorey.id,
+            topStoreyId: isGoingUp ? targetStorey.id : activeStoreyId,
+            bottomElevation: isGoingUp ? activeStorey.elevation : targetStorey.elevation,
+            stairType: stairPlacement.params.stairType,
+            createOpening: stairPlacement.params.createOpening,
+          });
+
+          addElement(stair);
+          console.log('Stair placed');
+          resetStairPlacement();
+        } catch (error) {
+          console.error('Could not create stair:', error);
+          resetStairPlacement();
+        }
+      }
+    },
+    [stairPlacement, activeStoreyId, activeStorey, storeys, setStairStartPoint, setStairPreviewEndPoint, resetStairPlacement, addElement]
+  );
+
+  // Handle door tool click - click on wall to place door
+  const handleDoorClick = useCallback(
+    (point: Point2D) => {
+      const result = findWallAtPoint(point);
+      if (!result) {
+        console.log('No wall found at click position');
+        return;
+      }
+
+      const { wall, position } = result;
+      if (!wall.wallData) return;
+
+      const wallLength = calculateWallLength(wall);
+      const doorWidth = doorPlacement.params.width;
+
+      // Check if position is valid (not too close to edges, not overlapping)
+      const halfDoorWidth = doorWidth / 2;
+      const doorStartNorm = position - halfDoorWidth / wallLength;
+      const doorEndNorm = position + halfDoorWidth / wallLength;
+
+      if (doorStartNorm < 0.02 || doorEndNorm > 0.98) {
+        console.log('Door too close to wall edge');
+        return;
+      }
+
+      // Check for overlapping openings
+      for (const opening of wall.wallData.openings) {
+        const openingHalfWidth = opening.width / 2 / wallLength;
+        const openingStart = opening.position - openingHalfWidth;
+        const openingEnd = opening.position + openingHalfWidth;
+        if (doorStartNorm < openingEnd + 0.02 / wallLength && doorEndNorm > openingStart - 0.02 / wallLength) {
+          console.log('Door overlaps with existing opening');
+          return;
+        }
+      }
+
+      if (!activeStoreyId) {
+        console.warn('No active storey selected');
+        return;
+      }
+
+      try {
+        const door = createDoor({
+          hostWallId: wall.id,
+          positionOnWall: position,
+          wallLength,
+          storeyId: activeStoreyId,
+          doorType: doorPlacement.params.doorType,
+          width: doorPlacement.params.width,
+          height: doorPlacement.params.height,
+          swingDirection: doorPlacement.params.swingDirection,
+        });
+
+        const opening = createOpeningFromDoor(door);
+
+        if (opening && wall.wallData) {
+          updateElement(wall.id, {
+            wallData: {
+              ...wall.wallData,
+              openings: [...wall.wallData.openings, opening],
+            },
+          });
+        }
+
+        addElement(door);
+        console.log('Door placed at position', position, 'on wall', wall.id);
+        resetDoorPlacement();
+      } catch (error) {
+        console.error('Could not create door:', error);
+      }
+    },
+    [findWallAtPoint, doorPlacement.params, activeStoreyId, addElement, updateElement, resetDoorPlacement]
+  );
+
+  // Handle window tool click - click on wall to place window
+  const handleWindowClick = useCallback(
+    (point: Point2D) => {
+      const result = findWallAtPoint(point);
+      if (!result) {
+        console.log('No wall found at click position');
+        return;
+      }
+
+      const { wall, position } = result;
+      if (!wall.wallData) return;
+
+      const wallLength = calculateWallLength(wall);
+      const windowWidth = windowPlacement.params.width;
+
+      // Check if position is valid (not too close to edges, not overlapping)
+      const halfWindowWidth = windowWidth / 2;
+      const windowStartNorm = position - halfWindowWidth / wallLength;
+      const windowEndNorm = position + halfWindowWidth / wallLength;
+
+      if (windowStartNorm < 0.02 || windowEndNorm > 0.98) {
+        console.log('Window too close to wall edge');
+        return;
+      }
+
+      // Check for overlapping openings
+      for (const opening of wall.wallData.openings) {
+        const openingHalfWidth = opening.width / 2 / wallLength;
+        const openingStart = opening.position - openingHalfWidth;
+        const openingEnd = opening.position + openingHalfWidth;
+        if (windowStartNorm < openingEnd + 0.02 / wallLength && windowEndNorm > openingStart - 0.02 / wallLength) {
+          console.log('Window overlaps with existing opening');
+          return;
+        }
+      }
+
+      if (!activeStoreyId) {
+        console.warn('No active storey selected');
+        return;
+      }
+
+      try {
+        const window = createWindow({
+          hostWallId: wall.id,
+          positionOnWall: position,
+          wallLength,
+          storeyId: activeStoreyId,
+          windowType: windowPlacement.params.windowType,
+          width: windowPlacement.params.width,
+          height: windowPlacement.params.height,
+          sillHeight: windowPlacement.params.sillHeight,
+        });
+
+        const opening = createOpeningFromWindow(window);
+
+        if (opening && wall.wallData) {
+          updateElement(wall.id, {
+            wallData: {
+              ...wall.wallData,
+              openings: [...wall.wallData.openings, opening],
+            },
+          });
+        }
+
+        addElement(window);
+        console.log('Window placed at position', position, 'on wall', wall.id);
+        resetWindowPlacement();
+      } catch (error) {
+        console.error('Could not create window:', error);
+      }
+    },
+    [findWallAtPoint, windowPlacement.params, activeStoreyId, addElement, updateElement, resetWindowPlacement]
+  );
+
+  // Handle asset tool click - single click placement
+  const handleAssetClick = useCallback(
+    (point: Point2D) => {
+      const assetId = assetPlacement.params.assetId;
+      if (!assetId) {
+        console.log('No asset selected');
+        return;
+      }
+
+      if (!activeStoreyId) {
+        console.warn('No active storey selected');
+        return;
+      }
+
+      const asset = getAssetById(assetId);
+      if (!asset) {
+        console.warn('Asset not found:', assetId);
+        return;
+      }
+
+      const category = getAssetCategoryForItem(assetId);
+      const furnitureCategory = category
+        ? mapAssetCategoryToFurnitureCategory(category.id)
+        : 'other';
+
+      const scale = assetPlacement.params.scale;
+      const rotationRad = (assetPlacement.params.rotation * Math.PI) / 180;
+
+      const element = createFurniture({
+        name: asset.name,
+        category: furnitureCategory,
+        modelUrl: asset.path,
+        modelFormat: 'glb',
+        originalFileName: asset.path.split('/').pop() || asset.id,
+        position: {
+          x: point.x,
+          y: point.y,
+          z: storeyElevation,
+        },
+        rotation: rotationRad,
+        scale: scale * asset.defaultScale,
+        width: asset.dimensions.width * scale,
+        depth: asset.dimensions.depth * scale,
+        height: asset.dimensions.height * scale,
+        storeyId: activeStoreyId,
+      });
+
+      addElement(element);
+      console.log('Asset placed at position', point);
+    },
+    [assetPlacement.params, activeStoreyId, storeyElevation, addElement]
   );
 
   // Handle wall tool click - two-click placement
@@ -299,6 +1009,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
             height: height,
             thickness: thickness,
             openings: [],
+            alignmentSide: DEFAULT_WALL_ALIGNMENT,
           },
         });
 
@@ -313,9 +1024,13 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   // Handle stage click for tool operations
   const handleStageClick = useCallback(
     (e: KonvaEventObject<MouseEvent>) => {
-      // Only handle left clicks on the stage itself
+      // Only handle left clicks
       if (e.evt.button !== 0) return;
-      if (e.target !== stageRef.current) return;
+
+      // For select tool, only process clicks on the stage background (not elements)
+      // For drawing tools, process clicks anywhere (click-through elements)
+      const isDrawingTool = ['wall', 'slab', 'space-draw', 'counter', 'column', 'stair', 'door', 'window', 'asset'].includes(activeTool);
+      if (!isDrawingTool && e.target !== stageRef.current) return;
 
       const stage = stageRef.current;
       if (!stage) return;
@@ -323,9 +1038,22 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
-      // Convert to world coordinates with snapping
+      // Convert to world coordinates
       const worldPos = screenToWorld(pointer.x, pointer.y);
-      const snappedPos = applyGridSnap(worldPos);
+
+      // Determine reference point for ortho snapping based on active tool
+      let refPoint: Point2D | undefined;
+      if (activeTool === 'wall' && wallPlacement.isPlacing && wallPlacement.startPoint) {
+        refPoint = wallPlacement.startPoint;
+      } else if (activeTool === 'slab' && slabPlacement.points.length > 0) {
+        refPoint = slabPlacement.points[slabPlacement.points.length - 1];
+      } else if (activeTool === 'space-draw' && spacePlacement.points.length > 0) {
+        refPoint = spacePlacement.points[spacePlacement.points.length - 1];
+      } else if (activeTool === 'counter' && counterPlacement.points.length > 0) {
+        refPoint = counterPlacement.points[counterPlacement.points.length - 1];
+      }
+
+      const snappedPos = applySnap(worldPos, refPoint);
 
       // Handle different tools
       switch (activeTool) {
@@ -337,12 +1065,71 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           handleWallClick(snappedPos);
           break;
 
-        // Future tools will be added here
+        case 'slab':
+          handleSlabClick(snappedPos);
+          break;
+
+        case 'space-draw':
+          handleSpaceClick(snappedPos);
+          break;
+
+        case 'counter':
+          handleCounterClick(snappedPos);
+          break;
+
+        case 'column':
+          handleColumnClick(snappedPos);
+          break;
+
+        case 'stair':
+          handleStairClick(snappedPos);
+          break;
+
+        case 'door':
+          handleDoorClick(snappedPos);
+          break;
+
+        case 'window':
+          handleWindowClick(snappedPos);
+          break;
+
+        case 'asset':
+          handleAssetClick(snappedPos);
+          break;
+
         default:
           break;
       }
     },
-    [activeTool, clearSelection, screenToWorld, applyGridSnap, handleWallClick]
+    [activeTool, clearSelection, screenToWorld, applySnap, handleWallClick, handleSlabClick, handleSpaceClick, handleCounterClick,
+     handleColumnClick, handleStairClick, handleDoorClick, handleWindowClick, handleAssetClick,
+     wallPlacement.isPlacing, wallPlacement.startPoint, slabPlacement.points, spacePlacement.points, counterPlacement.points,
+     stairPlacement.startPoint]
+  );
+
+  // Handle double-click for polygon completion
+  const handleStageDoubleClick = useCallback(
+    (e: KonvaEventObject<MouseEvent>) => {
+      if (e.evt.button !== 0) return;
+
+      switch (activeTool) {
+        case 'slab':
+          handleSlabDoubleClick();
+          break;
+
+        case 'space-draw':
+          handleSpaceDoubleClick();
+          break;
+
+        case 'counter':
+          handleCounterDoubleClick();
+          break;
+
+        default:
+          break;
+      }
+    },
+    [activeTool, handleSlabDoubleClick, handleSpaceDoubleClick, handleCounterDoubleClick]
   );
 
   // Render grid
@@ -1391,6 +2178,537 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     );
   };
 
+  // Render polygon preview (for slab and space tools)
+  const renderPolygonPreview = (
+    points: Point2D[],
+    previewPoint: Point2D | null,
+    color: string,
+    fillColor: string,
+    label: string
+  ) => {
+    if (points.length === 0) return null;
+
+    // Build preview polygon including preview point
+    const allPoints = [...points];
+    if (previewPoint) {
+      allPoints.push(previewPoint);
+    }
+
+    // Convert to screen coordinates
+    const screenPoints = allPoints.flatMap((p) => {
+      const screen = worldToScreen(p.x, p.y);
+      return [screen.x, screen.y];
+    });
+
+    // First point marker (for close detection)
+    const firstPoint = points[0];
+    if (!firstPoint) return null;
+    const firstScreen = worldToScreen(firstPoint.x, firstPoint.y);
+
+    // Calculate area for display
+    const area = allPoints.length >= 3 ? calculatePolygonArea(allPoints) : 0;
+
+    // Centroid for label
+    let cx = 0, cy = 0;
+    for (const p of allPoints) {
+      cx += p.x;
+      cy += p.y;
+    }
+    cx /= allPoints.length;
+    cy /= allPoints.length;
+    const labelPos = worldToScreen(cx, cy);
+
+    return (
+      <Group>
+        {/* Polygon outline and fill */}
+        {allPoints.length >= 3 && (
+          <Line
+            points={screenPoints}
+            closed
+            fill={fillColor}
+            stroke={color}
+            strokeWidth={2}
+            dash={[8, 4]}
+          />
+        )}
+        {/* Line segments if less than 3 points */}
+        {allPoints.length < 3 && allPoints.length >= 2 && (
+          <Line
+            points={screenPoints}
+            stroke={color}
+            strokeWidth={2}
+            dash={[8, 4]}
+          />
+        )}
+        {/* Point markers */}
+        {points.map((p, i) => {
+          const screen = worldToScreen(p.x, p.y);
+          return (
+            <Circle
+              key={i}
+              x={screen.x}
+              y={screen.y}
+              radius={i === 0 ? 6 : 4}
+              fill={i === 0 ? color : '#ffffff'}
+              stroke={i === 0 ? '#ffffff' : color}
+              strokeWidth={2}
+            />
+          );
+        })}
+        {/* Preview point marker */}
+        {previewPoint && (
+          <Circle
+            x={worldToScreen(previewPoint.x, previewPoint.y).x}
+            y={worldToScreen(previewPoint.x, previewPoint.y).y}
+            radius={4}
+            fill="#ffffff"
+            stroke={color}
+            strokeWidth={2}
+            dash={[2, 2]}
+          />
+        )}
+        {/* Close indicator when near first point */}
+        {previewPoint && points.length >= 3 && firstPoint && distance2D(previewPoint, firstPoint) < SNAP_TOLERANCE && (
+          <Circle
+            x={firstScreen.x}
+            y={firstScreen.y}
+            radius={12}
+            stroke={color}
+            strokeWidth={2}
+            dash={[4, 4]}
+          />
+        )}
+        {/* Area label */}
+        {allPoints.length >= 3 && (
+          <Group x={labelPos.x} y={labelPos.y}>
+            <Rect
+              x={-40}
+              y={-20}
+              width={80}
+              height={40}
+              fill="rgba(255, 255, 255, 0.9)"
+              cornerRadius={4}
+            />
+            <Text
+              x={-40}
+              y={-15}
+              width={80}
+              height={20}
+              text={label}
+              fontSize={10}
+              fill="#666"
+              align="center"
+            />
+            <Text
+              x={-40}
+              y={0}
+              width={80}
+              height={20}
+              text={`${area.toFixed(2)} m²`}
+              fontSize={12}
+              fill={color}
+              fontStyle="bold"
+              align="center"
+            />
+          </Group>
+        )}
+      </Group>
+    );
+  };
+
+  // Render slab preview
+  const renderSlabPreview = () => {
+    if (activeTool !== 'slab') return null;
+    return renderPolygonPreview(
+      slabPlacement.points,
+      slabPlacement.previewPoint,
+      '#9933ff', // Purple for slab
+      'rgba(153, 51, 255, 0.15)',
+      'Slab'
+    );
+  };
+
+  // Render space preview
+  const renderSpacePreview = () => {
+    if (activeTool !== 'space-draw') return null;
+    return renderPolygonPreview(
+      spacePlacement.points,
+      spacePlacement.previewPoint,
+      '#00aa66', // Green for space
+      'rgba(0, 170, 102, 0.15)',
+      'Space'
+    );
+  };
+
+  // Render counter path preview
+  const renderCounterPreview = () => {
+    if (activeTool !== 'counter') return null;
+    if (counterPlacement.points.length === 0) return null;
+
+    const points = counterPlacement.points;
+    const previewPoint = counterPlacement.previewPoint;
+
+    // Build preview path including preview point
+    const allPoints = [...points];
+    if (previewPoint) {
+      allPoints.push(previewPoint);
+    }
+
+    // Convert to screen coordinates for the path line
+    const screenPoints = allPoints.flatMap((p) => {
+      const screen = worldToScreen(p.x, p.y);
+      return [screen.x, screen.y];
+    });
+
+    // Calculate total length
+    let totalLength = 0;
+    for (let i = 1; i < allPoints.length; i++) {
+      const prevPt = allPoints[i - 1];
+      const currPt = allPoints[i];
+      if (prevPt && currPt) {
+        totalLength += distance2D(prevPt, currPt);
+      }
+    }
+
+    return (
+      <Group>
+        {/* Path line */}
+        <Line
+          points={screenPoints}
+          stroke="#8B4513"
+          strokeWidth={3}
+          lineCap="round"
+          lineJoin="round"
+        />
+        {/* Depth indicator (offset line) */}
+        {allPoints.length >= 2 && (() => {
+          const depth = DEFAULT_COUNTER_DEPTH;
+          const offsetPoints: number[] = [];
+
+          for (let i = 0; i < allPoints.length; i++) {
+            const p = allPoints[i];
+            if (!p) continue;
+            let nx = 0, ny = 0;
+
+            if (i === 0 && allPoints.length > 1) {
+              const next = allPoints[1];
+              if (next) {
+                const dx = next.x - p.x;
+                const dy = next.y - p.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                  nx = -dy / len;
+                  ny = dx / len;
+                }
+              }
+            } else if (i === allPoints.length - 1 && allPoints.length > 1) {
+              const prev = allPoints[i - 1];
+              if (prev) {
+                const dx = p.x - prev.x;
+                const dy = p.y - prev.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                  nx = -dy / len;
+                  ny = dx / len;
+                }
+              }
+            } else if (allPoints.length > 2) {
+              const prev = allPoints[i - 1];
+              const next = allPoints[i + 1];
+              if (prev && next) {
+                const dx1 = p.x - prev.x;
+                const dy1 = p.y - prev.y;
+                const dx2 = next.x - p.x;
+                const dy2 = next.y - p.y;
+                const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+                const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+                if (len1 > 0 && len2 > 0) {
+                  const nx1 = -dy1 / len1;
+                  const ny1 = dx1 / len1;
+                  const nx2 = -dy2 / len2;
+                  const ny2 = dx2 / len2;
+                  nx = (nx1 + nx2) / 2;
+                  ny = (ny1 + ny2) / 2;
+                  const normalLen = Math.sqrt(nx * nx + ny * ny);
+                  if (normalLen > 0) {
+                    nx /= normalLen;
+                    ny /= normalLen;
+                  }
+                }
+              }
+            }
+
+            const offsetP = worldToScreen(p.x + nx * depth, p.y + ny * depth);
+            offsetPoints.push(offsetP.x, offsetP.y);
+          }
+
+          return (
+            <Line
+              points={offsetPoints}
+              stroke="#8B4513"
+              strokeWidth={1}
+              dash={[4, 4]}
+              opacity={0.6}
+            />
+          );
+        })()}
+        {/* Point markers */}
+        {points.map((p, i) => {
+          const screen = worldToScreen(p.x, p.y);
+          return (
+            <Circle
+              key={i}
+              x={screen.x}
+              y={screen.y}
+              radius={i === 0 ? 5 : 4}
+              fill={i === 0 ? '#8B4513' : '#ffffff'}
+              stroke={i === 0 ? '#ffffff' : '#8B4513'}
+              strokeWidth={2}
+            />
+          );
+        })}
+        {/* Preview point */}
+        {previewPoint && (
+          <Circle
+            x={worldToScreen(previewPoint.x, previewPoint.y).x}
+            y={worldToScreen(previewPoint.x, previewPoint.y).y}
+            radius={4}
+            fill="#ffffff"
+            stroke="#8B4513"
+            strokeWidth={2}
+          />
+        )}
+        {/* Length label */}
+        {allPoints.length >= 2 && (() => {
+          const lastPt = allPoints[allPoints.length - 1];
+          if (!lastPt) return null;
+          const lastScreen = worldToScreen(lastPt.x, lastPt.y);
+          return (
+          <Group x={lastScreen.x + 15} y={lastScreen.y - 15}>
+            <Rect
+              x={0}
+              y={0}
+              width={60}
+              height={20}
+              fill="rgba(255, 255, 255, 0.9)"
+              cornerRadius={3}
+            />
+            <Text
+              x={0}
+              y={0}
+              width={60}
+              height={20}
+              text={`${totalLength.toFixed(2)}m`}
+              fontSize={11}
+              fill="#8B4513"
+              fontStyle="bold"
+              align="center"
+              verticalAlign="middle"
+            />
+          </Group>
+          );
+        })()}
+      </Group>
+    );
+  };
+
+  // Render column preview
+  const renderColumnPreview = () => {
+    if (activeTool !== 'column') return null;
+    if (!columnPlacement.previewPosition) return null;
+
+    const pos = columnPlacement.previewPosition;
+    const screenPos = worldToScreen(pos.x, pos.y);
+    const { width, depth, profileType } = columnPlacement.params;
+
+    // Scale dimensions to screen
+    const screenWidth = width * cad2dZoom;
+    const screenDepth = depth * cad2dZoom;
+
+    if (profileType === 'circular') {
+      const radius = screenWidth / 2;
+      return (
+        <Circle
+          x={screenPos.x}
+          y={screenPos.y}
+          radius={radius}
+          fill="rgba(102, 102, 102, 0.3)"
+          stroke={COLUMN_COLOR}
+          strokeWidth={2}
+          dash={[4, 4]}
+        />
+      );
+    }
+
+    return (
+      <Rect
+        x={screenPos.x - screenWidth / 2}
+        y={screenPos.y - screenDepth / 2}
+        width={screenWidth}
+        height={screenDepth}
+        fill="rgba(102, 102, 102, 0.3)"
+        stroke={COLUMN_COLOR}
+        strokeWidth={2}
+        dash={[4, 4]}
+      />
+    );
+  };
+
+  // Render stair preview
+  const renderStairPreview = () => {
+    if (activeTool !== 'stair') return null;
+    if (!stairPlacement.startPoint) return null;
+
+    const { startPoint, previewEndPoint, rotation, params } = stairPlacement;
+    const screenStart = worldToScreen(startPoint.x, startPoint.y);
+
+    // Calculate stair run length based on storey height
+    const sortedStoreys = [...storeys].sort((a, b) => a.elevation - b.elevation);
+    const activeIndex = sortedStoreys.findIndex((s) => s.id === activeStoreyId);
+    let targetStorey = params.targetStoreyId
+      ? storeys.find((s) => s.id === params.targetStoreyId)
+      : null;
+
+    if (!targetStorey && activeIndex >= 0 && activeIndex < sortedStoreys.length - 1) {
+      targetStorey = sortedStoreys[activeIndex + 1];
+    }
+
+    const totalRise = targetStorey && activeStorey
+      ? Math.abs(targetStorey.elevation - activeStorey.elevation)
+      : 3.0;
+
+    const steps = calculateSteps(totalRise);
+    const runLength = steps.runLength;
+    const stairWidth = params.width;
+
+    // Screen dimensions
+    const screenRunLength = runLength * cad2dZoom;
+    const screenWidth = stairWidth * cad2dZoom;
+
+    // If no preview end point yet, show stair outline at start
+    if (!previewEndPoint || (previewEndPoint.x === startPoint.x && previewEndPoint.y === startPoint.y)) {
+      return (
+        <Group x={screenStart.x} y={screenStart.y}>
+          <Rect
+            x={0}
+            y={-screenWidth / 2}
+            width={screenRunLength}
+            height={screenWidth}
+            fill="rgba(102, 102, 102, 0.2)"
+            stroke={STAIR_COLOR}
+            strokeWidth={2}
+            dash={[6, 4]}
+          />
+          <Circle
+            x={0}
+            y={0}
+            radius={5}
+            fill={STAIR_COLOR}
+          />
+        </Group>
+      );
+    }
+
+    // Show rotated stair preview
+    const rotationDeg = rotation * (180 / Math.PI);
+
+    return (
+      <Group x={screenStart.x} y={screenStart.y} rotation={rotationDeg}>
+        {/* Stair outline */}
+        <Rect
+          x={0}
+          y={-screenWidth / 2}
+          width={screenRunLength}
+          height={screenWidth}
+          fill="rgba(102, 102, 102, 0.3)"
+          stroke={STAIR_COLOR}
+          strokeWidth={2}
+        />
+        {/* Step lines */}
+        {(() => {
+          const stepLines: JSX.Element[] = [];
+          const stepCount = steps.count;
+          const screenStepDepth = screenRunLength / stepCount;
+          for (let i = 1; i < stepCount; i++) {
+            const x = i * screenStepDepth;
+            stepLines.push(
+              <Line
+                key={i}
+                points={[x, -screenWidth / 2, x, screenWidth / 2]}
+                stroke={STAIR_COLOR}
+                strokeWidth={1}
+                opacity={0.5}
+              />
+            );
+          }
+          return stepLines;
+        })()}
+        {/* Direction arrow */}
+        <Line
+          points={[screenRunLength * 0.3, 0, screenRunLength * 0.7, 0]}
+          stroke={STAIR_ARROW_COLOR}
+          strokeWidth={2}
+        />
+        <Line
+          points={[screenRunLength * 0.6, -screenWidth * 0.15, screenRunLength * 0.7, 0, screenRunLength * 0.6, screenWidth * 0.15]}
+          stroke={STAIR_ARROW_COLOR}
+          strokeWidth={2}
+          lineCap="round"
+          lineJoin="round"
+        />
+        {/* Start point marker */}
+        <Circle
+          x={0}
+          y={0}
+          radius={4}
+          fill="#ffffff"
+          stroke={STAIR_COLOR}
+          strokeWidth={2}
+        />
+      </Group>
+    );
+  };
+
+  // Render asset preview
+  const renderAssetPreview = () => {
+    if (activeTool !== 'asset') return null;
+    if (!assetPlacement.params.assetId || !assetPlacement.previewPosition) return null;
+
+    const pos = assetPlacement.previewPosition;
+    const screenPos = worldToScreen(pos.x, pos.y);
+    const asset = getAssetById(assetPlacement.params.assetId);
+    if (!asset) return null;
+
+    const scale = assetPlacement.params.scale;
+    const rotation = assetPlacement.params.rotation;
+    const screenWidth = asset.dimensions.width * scale * cad2dZoom;
+    const screenDepth = asset.dimensions.depth * scale * cad2dZoom;
+
+    return (
+      <Group x={screenPos.x} y={screenPos.y} rotation={rotation}>
+        <Rect
+          x={-screenWidth / 2}
+          y={-screenDepth / 2}
+          width={screenWidth}
+          height={screenDepth}
+          fill="rgba(74, 74, 74, 0.3)"
+          stroke={FURNITURE_COLOR}
+          strokeWidth={2}
+          dash={[4, 4]}
+        />
+        <Text
+          x={-screenWidth / 2}
+          y={screenDepth / 2 + 5}
+          width={screenWidth}
+          text={asset.name}
+          fontSize={10}
+          fill={FURNITURE_COLOR}
+          align="center"
+        />
+      </Group>
+    );
+  };
+
   // Render cursor crosshair for drawing tools
   const renderCursor = () => {
     if (activeTool === 'select' || activeTool === 'pan' || activeTool === 'orbit') return null;
@@ -1455,6 +2773,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         onMouseLeave={handleMouseUp}
         onContextMenu={handleContextMenu}
         onClick={handleStageClick}
+        onDblClick={handleStageDoubleClick}
       >
         {/* Grid Layer */}
         <Layer listening={false}>{renderGrid()}</Layer>
@@ -1465,6 +2784,12 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         {/* Preview Layer - for active tool previews */}
         <Layer listening={false}>
           {renderWallPreview()}
+          {renderSlabPreview()}
+          {renderSpacePreview()}
+          {renderCounterPreview()}
+          {renderColumnPreview()}
+          {renderStairPreview()}
+          {renderAssetPreview()}
           {renderCursor()}
         </Layer>
 
