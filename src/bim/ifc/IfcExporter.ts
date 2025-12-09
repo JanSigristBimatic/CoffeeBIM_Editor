@@ -132,6 +132,7 @@ export class IfcExporter {
 
     // Export stairs
     const stairs = elements.filter((e) => e.type === 'stair');
+    console.log('[IFC Export] Found stairs:', stairs.length, stairs.map(s => s.name));
     for (const stair of stairs) {
       this.createStair(stair, storeys);
     }
@@ -1466,16 +1467,47 @@ export class IfcExporter {
   private static readonly STAIR_SLAB_THICKNESS = 0.15; // 15cm typical concrete stair slab
 
   private createStair(stair: BimElement, storeys: StoreyInfo[]): void {
-    if (!stair.stairData) return;
+    if (!stair.stairData) {
+      console.warn('[IFC Export] Stair has no stairData:', stair.id, stair.name);
+      return;
+    }
 
     const { width, rotation, steps, bottomStoreyId } = stair.stairData;
     const { count: stepCount, riserHeight, treadDepth } = steps;
 
-    if (stepCount < 1) return;
+    if (stepCount < 1) {
+      console.warn('[IFC Export] Stair has no steps:', stair.id, stair.name, 'stepCount:', stepCount);
+      return;
+    }
 
     // Find bottom storey (where stair starts)
-    const bottomStorey = storeys.find((s) => s.id === bottomStoreyId);
+    // First try by bottomStoreyId from stairData
+    let bottomStorey = storeys.find((s) => s.id === bottomStoreyId);
+
+    // Fallback: use parentId if bottomStoreyId not found
+    if (!bottomStorey && stair.parentId) {
+      bottomStorey = storeys.find((s) => s.id === stair.parentId);
+    }
+
+    // Last resort: use first storey
+    if (!bottomStorey && storeys.length > 0) {
+      bottomStorey = storeys[0];
+      console.warn('[IFC Export] Using first storey as fallback for stair:', stair.name);
+    }
+
     const storeyIfcId = bottomStorey ? this.storeyIds.get(bottomStorey.id) : null;
+
+    console.log('[IFC Export] Creating stair:', stair.name, {
+      bottomStoreyId,
+      parentId: stair.parentId,
+      availableStoreys: storeys.map(s => s.id),
+      bottomStorey: bottomStorey?.name,
+      storeyIfcId,
+      stepCount,
+      riserHeight,
+      treadDepth,
+      width,
+    });
 
     // Position from placement (Z-up: x, y are horizontal, z is vertical)
     const posX = stair.placement.position.x;
@@ -1564,6 +1596,9 @@ export class IfcExporter {
     // Assign to storey
     if (storeyIfcId) {
       this.createContainedInSpatialStructure(stairIfcId, storeyIfcId);
+      console.log('[IFC Export] Stair assigned to storey:', stair.name, '→', bottomStorey?.name);
+    } else {
+      console.warn('[IFC Export] Stair NOT assigned to storey (orphan):', stair.name, 'bottomStoreyId:', bottomStoreyId);
     }
   }
 
