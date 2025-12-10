@@ -134,6 +134,7 @@ export function WallPreview() {
         <Html
           position={[labelData.midpoint.x, labelData.midpoint.y, storeyElevation + height + 0.3]}
           center
+          zIndexRange={[40, 0]}
           style={{ pointerEvents: 'none' }}
         >
           <div

@@ -3,6 +3,7 @@ import { MapPin } from 'lucide-react';
 import { SplitView, Toolbar, SlabCompleteDialog, DistanceInputOverlay } from '@/components/editor';
 import { PropertyPanel, HierarchyPanel, WallParameterPanel, DoorParameterPanel, WindowParameterPanel, ColumnParameterPanel, CounterParameterPanel, StairParameterPanel } from '@/components/panels';
 import { BimaticLink } from '@/components/ui/BimaticLink';
+import { BuyMeACoffeeButton } from '@/components/ui/BuyMeACoffeeButton';
 import { useKeyboardShortcuts, useStorageSync } from '@/hooks';
 import { useViewStore, useToolStore, useProjectStore } from '@/store';
 import { requestPersistentStorage } from '@/lib/storage';
@@ -82,7 +83,10 @@ function App() {
           <h1 className="text-lg font-bold text-primary-foreground">CoffeeBIM Editor</h1>
           <span className="ml-2 text-xs text-primary-foreground/70">v0.1.0</span>
         </div>
-        <BimaticLink />
+        <div className="flex items-center gap-3">
+          <BuyMeACoffeeButton />
+          <BimaticLink />
+        </div>
       </header>
 
       {/* Toolbar */}

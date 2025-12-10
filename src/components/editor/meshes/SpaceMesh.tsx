@@ -201,6 +201,7 @@ export function SpaceLabel({
       position={[centroid.x, centroid.y, 0.1]}
       center
       occlude={false}
+      zIndexRange={[40, 0]}
       style={{
         pointerEvents: 'none',
         userSelect: 'none',

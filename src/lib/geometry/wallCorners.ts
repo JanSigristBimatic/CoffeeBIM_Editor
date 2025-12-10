@@ -196,6 +196,26 @@ export function calculateCornerAngle(
 // ============================================================================
 
 /**
+ * Maximum extension factor relative to wall thickness.
+ * Prevents extreme extensions at very acute angles.
+ */
+const MAX_EXTENSION_FACTOR = 3;
+
+/**
+ * Minimum angle (in radians) for miter calculation.
+ * Below this angle, we skip miter to avoid extreme extensions.
+ * ~15 degrees = 0.26 radians
+ */
+const MIN_MITER_ANGLE = 0.26;
+
+/**
+ * Clamp a value between min and max
+ */
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+/**
  * Calculate true miter extensions using line-line intersection.
  *
  * This is the core algorithm that makes wall corners work like Revit:
@@ -227,6 +247,18 @@ function calculateTrueMiterExtensions(
   if (turnDirection === 'straight' || turnDirection === 'back') {
     return result;
   }
+
+  // Calculate angle between walls to check for very acute angles
+  const dot = wallADir.x * wallBDir.x + wallADir.y * wallBDir.y;
+  const angle = Math.acos(clamp(dot, -1, 1));
+
+  // Skip miter for very acute angles (< ~15°) - would produce extreme extensions
+  if (angle < MIN_MITER_ANGLE || angle > Math.PI - MIN_MITER_ANGLE) {
+    return result;
+  }
+
+  // Maximum allowed extension based on wall thickness
+  const maxExtension = Math.max(wallAThickness, wallBThickness) * MAX_EXTENSION_FACTOR;
 
   // Calculate perpendicular normals (pointing LEFT when looking from start to end)
   const normalA = { x: -wallADir.y, y: wallADir.x };
@@ -372,6 +404,12 @@ function calculateTrueMiterExtensions(
       effectiveDirB
     );
   }
+
+  // Clamp all extensions to prevent extreme values at acute angles
+  result.wallA.leftEdge = clamp(result.wallA.leftEdge, -maxExtension, maxExtension);
+  result.wallA.rightEdge = clamp(result.wallA.rightEdge, -maxExtension, maxExtension);
+  result.wallB.leftEdge = clamp(result.wallB.leftEdge, -maxExtension, maxExtension);
+  result.wallB.rightEdge = clamp(result.wallB.rightEdge, -maxExtension, maxExtension);
 
   return result;
 }

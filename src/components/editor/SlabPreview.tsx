@@ -132,6 +132,7 @@ export function SlabPreview() {
           <Html
             position={[midX, midY, storeyElevation + 0.1]}
             center
+            zIndexRange={[40, 0]}
             style={{ pointerEvents: 'none' }}
           >
             <div

@@ -9,3 +9,5 @@ export { useMeasurementStore } from './useMeasurementStore';
 export type { Measurement, MeasurementPlacementState } from './useMeasurementStore';
 export { useEvacuationStore } from './useEvacuationStore';
 export type { EvacuationAgent, ExitDoor } from './useEvacuationStore';
+export { useSettingsStore } from './useSettingsStore';
+export type { VisualizationStyle, ImageResolution } from './useSettingsStore';

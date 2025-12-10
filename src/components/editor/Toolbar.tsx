@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trash2 } from 'lucide-react';
-import { useSelectionStore, useElementStore, useProjectStore } from '@/store';
+import { Trash2, Settings, Sparkles } from 'lucide-react';
+import { useSelectionStore, useElementStore, useProjectStore, useSettingsStore } from '@/store';
 import { exportToIfc } from '@/bim/ifc';
 import { clearDatabase } from '@/lib/storage/indexedDBStorage';
 import { PdfCalibrationDialog } from '@/components/panels/PdfCalibrationDialog';
 import { ImportModelDialog } from '@/components/panels/ImportModelDialog';
 import { ImportIfcDialog } from '@/components/panels/ImportIfcDialog';
+import { SettingsDialog } from '@/components/panels/SettingsDialog';
+import { VisualizationDialog } from '@/components/panels/VisualizationDialog';
 import {
   ToolSelectionGroup,
   ViewControlsGroup,
@@ -22,11 +24,17 @@ export function Toolbar() {
   const { getSelectedIds } = useSelectionStore();
   const { getAllElements } = useElementStore();
   const { project, site, building, storeys } = useProjectStore();
+  const { geminiApiKey, isKeyValidated } = useSettingsStore();
 
   const [isExporting, setIsExporting] = useState(false);
   const [showPdfDialog, setShowPdfDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showIfcImportDialog, setShowIfcImportDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [showVisualizationDialog, setShowVisualizationDialog] = useState(false);
+
+  // Check if AI visualization is available
+  const canVisualize = geminiApiKey && isKeyValidated;
 
   const selectedIds = getSelectedIds();
   const hasSelection = selectedIds.length > 0;
@@ -114,6 +122,21 @@ export function Toolbar() {
         </div>
       )}
 
+      {/* AI & Settings */}
+      <div className="flex items-center gap-1 border-l pl-2 ml-2">
+        <ActionButton
+          icon={<Sparkles size={20} className={canVisualize ? 'text-purple-500' : 'text-muted-foreground'} />}
+          label="AI Visualisierung"
+          onClick={() => setShowVisualizationDialog(true)}
+          disabled={!canVisualize}
+        />
+        <ActionButton
+          icon={<Settings size={20} />}
+          label="Einstellungen"
+          onClick={() => setShowSettingsDialog(true)}
+        />
+      </div>
+
       {/* Project Actions */}
       <div className="flex items-center gap-1 border-l pl-2 ml-2">
         <ActionButton
@@ -135,6 +158,14 @@ export function Toolbar() {
       <ImportIfcDialog
         open={showIfcImportDialog}
         onClose={() => setShowIfcImportDialog(false)}
+      />
+      <SettingsDialog
+        open={showSettingsDialog}
+        onClose={() => setShowSettingsDialog(false)}
+      />
+      <VisualizationDialog
+        open={showVisualizationDialog}
+        onClose={() => setShowVisualizationDialog(false)}
       />
     </div>
   );

@@ -175,6 +175,7 @@ export function CounterPreview() {
           <Html
             position={[midX, midY, preview.storeyElevation + 0.1]}
             center
+            zIndexRange={[40, 0]}
             style={{ pointerEvents: 'none' }}
           >
             <div

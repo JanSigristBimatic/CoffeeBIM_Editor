@@ -200,6 +200,7 @@ function DistanceLabel({ position, text, color, axis, isTotal = false }: Distanc
       position={[position.x, position.y, position.z]}
       center
       occlude={false}
+      zIndexRange={[40, 0]}
       style={{
         pointerEvents: 'none',
         userSelect: 'none',

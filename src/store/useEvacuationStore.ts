@@ -40,12 +40,12 @@ const STUCK = {
   PUSH_COOLDOWN_FRAMES: 30,
   PUSH_SPEED_FACTOR: 0.7,
   MIN_PUSH_DISTANCE: 0.3,
+  MAX_PUSH_DISTANCE: 3.0, // Don't push toward waypoints farther than this (likely through walls)
 } as const;
 
 const EXIT = {
-  DETECTION_RADIUS: 0.8,
-  BACKUP_DETECTION_RADIUS: 1.0,
-  WAYPOINT_REACH_DISTANCE: 0.8,
+  DETECTION_RADIUS: 0.5,
+  WAYPOINT_REACH_DISTANCE: 0.6,
 } as const;
 
 // ============================================================================
@@ -676,7 +676,9 @@ function pushAgentTowardWaypoint(agent: EvacuationAgent): void {
   const toWp = { x: currentWp.position.x - pos.x, y: currentWp.position.y - pos.y };
   const dist = Math.sqrt(toWp.x * toWp.x + toWp.y * toWp.y);
 
-  if (dist > STUCK.MIN_PUSH_DISTANCE) {
+  // Only push if waypoint is within reasonable distance (same room)
+  // If waypoint is too far, agent is likely stuck at a wall and pushing would go through it
+  if (dist > STUCK.MIN_PUSH_DISTANCE && dist < STUCK.MAX_PUSH_DISTANCE) {
     const vel = agent.vehicle.velocity;
     vel.x = (toWp.x / dist) * agent.vehicle.maxSpeed * STUCK.PUSH_SPEED_FACTOR;
     vel.y = (toWp.y / dist) * agent.vehicle.maxSpeed * STUCK.PUSH_SPEED_FACTOR;
@@ -707,12 +709,11 @@ function advanceWaypointIfReached(agent: EvacuationAgent): void {
 
 function checkExitReached(
   agent: EvacuationAgent,
-  exitDoors: ExitDoor[],
   entityManager: YUKA.EntityManager
 ): boolean {
   const pos = agent.vehicle.position;
 
-  // Check last waypoint (primary exit)
+  // Check last waypoint (primary exit) - only exit through the assigned exit
   const lastWp = agent.waypoints[agent.waypoints.length - 1];
   if (lastWp?.isExit) {
     const dist = distance2D({ x: pos.x, y: pos.y }, lastWp.position);
@@ -722,15 +723,7 @@ function checkExitReached(
     }
   }
 
-  // Backup: check proximity to any exit door
-  for (const exit of exitDoors) {
-    const dist = distance2D({ x: pos.x, y: pos.y }, exit.position);
-    if (dist < EXIT.BACKUP_DETECTION_RADIUS) {
-      markAgentAsExited(agent, entityManager);
-      return true;
-    }
-  }
-
+  // No backup check - agents must reach their assigned exit via the correct path
   return false;
 }
 
@@ -873,7 +866,7 @@ export const useEvacuationStore = create<EvacuationState & EvacuationActions>((s
       updateAgentRotation(agent);
       advanceWaypointIfReached(agent);
 
-      if (checkExitReached(agent, state.exitDoors, state.entityManager)) {
+      if (checkExitReached(agent, state.entityManager)) {
         exitedCount++;
       }
     }

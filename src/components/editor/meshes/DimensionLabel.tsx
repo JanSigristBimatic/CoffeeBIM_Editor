@@ -39,7 +39,7 @@ export function DimensionLabel({ dimension, visible = true }: DimensionLabelProp
     <Html
       position={position}
       center
-      zIndexRange={[100, 0]}
+      zIndexRange={[40, 0]}
       sprite
       transform
       distanceFactor={8}
