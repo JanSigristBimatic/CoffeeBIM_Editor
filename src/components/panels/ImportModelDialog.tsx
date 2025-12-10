@@ -25,7 +25,7 @@ interface ImportedModel {
   file: File;
   name: string;
   category: FurnitureCategory;
-  blobUrl: string;
+  dataUrl: string; // Data URL (base64) persists across sessions, unlike blob URLs
 }
 
 const CATEGORY_OPTIONS: { value: FurnitureCategory; label: string }[] = [
@@ -52,13 +52,23 @@ export function ImportModelDialog({ open, onClose }: ImportModelDialogProps) {
   const { addElement } = useElementStore();
   const { activeStoreyId } = useProjectStore();
 
+  // Convert file to data URL (base64) - persists across sessions unlike blob URLs
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error(`Fehler beim Lesen von ${file.name}`));
+      reader.readAsDataURL(file);
+    });
+  };
+
   // Handle file selection
-  const handleFiles = useCallback((files: FileList | null) => {
+  const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files) return;
 
-    const newModels: ImportedModel[] = [];
     const errors: string[] = [];
     const warnings: string[] = [];
+    const validFiles: File[] = [];
 
     Array.from(files).forEach((file) => {
       if (!isSupportedModelFormat(file.name)) {
@@ -75,29 +85,47 @@ export function ImportModelDialog({ open, onClose }: ImportModelDialogProps) {
         );
       }
 
-      // Create blob URL for the file
-      const blobUrl = URL.createObjectURL(file);
+      // Warn about large files (>10MB) - data URLs can be large
+      if (file.size > 10 * 1024 * 1024) {
+        warnings.push(
+          `${file.name}: Große Datei (${(file.size / 1024 / 1024).toFixed(1)} MB). ` +
+          `Performance kann beeinträchtigt sein.`
+        );
+      }
 
-      // Extract name from filename (without extension)
-      const name = file.name.replace(/\.[^/.]+$/, '');
-
-      newModels.push({
-        file,
-        name,
-        category: 'other',
-        blobUrl,
-      });
+      validFiles.push(file);
     });
 
     if (errors.length > 0) {
       setError(errors.join('\n'));
-    } else if (warnings.length > 0) {
-      setError(warnings.join('\n'));
-    } else {
-      setError(null);
+      return;
     }
 
-    setImportedModels((prev) => [...prev, ...newModels]);
+    // Convert all valid files to data URLs (async)
+    try {
+      const newModels: ImportedModel[] = await Promise.all(
+        validFiles.map(async (file) => {
+          const dataUrl = await fileToDataUrl(file);
+          const name = file.name.replace(/\.[^/.]+$/, '');
+          return {
+            file,
+            name,
+            category: 'other' as FurnitureCategory,
+            dataUrl,
+          };
+        })
+      );
+
+      if (warnings.length > 0) {
+        setError(warnings.join('\n'));
+      } else {
+        setError(null);
+      }
+
+      setImportedModels((prev) => [...prev, ...newModels]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Fehler beim Laden der Dateien');
+    }
   }, []);
 
   const handleFileChange = useCallback(
@@ -140,13 +168,7 @@ export function ImportModelDialog({ open, onClose }: ImportModelDialogProps) {
 
   // Remove model from list
   const removeModel = useCallback((index: number) => {
-    setImportedModels((prev) => {
-      const model = prev[index];
-      if (model) {
-        URL.revokeObjectURL(model.blobUrl);
-      }
-      return prev.filter((_, i) => i !== index);
-    });
+    setImportedModels((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   // Import all models
@@ -169,7 +191,7 @@ export function ImportModelDialog({ open, onClose }: ImportModelDialogProps) {
       const element = createFurniture({
         name: model.name,
         category: model.category,
-        modelUrl: model.blobUrl,
+        modelUrl: model.dataUrl, // Use data URL - persists across sessions
         modelFormat: format,
         originalFileName: model.file.name,
         position: {
@@ -192,14 +214,11 @@ export function ImportModelDialog({ open, onClose }: ImportModelDialogProps) {
 
   // Cleanup on close
   const handleClose = useCallback(() => {
-    // Revoke all blob URLs that weren't imported
-    importedModels.forEach((model) => {
-      URL.revokeObjectURL(model.blobUrl);
-    });
+    // Clear models that weren't imported
     setImportedModels([]);
     setError(null);
     onClose();
-  }, [importedModels, onClose]);
+  }, [onClose]);
 
   return (
     <Dialog open={open} onClose={handleClose} size="lg">

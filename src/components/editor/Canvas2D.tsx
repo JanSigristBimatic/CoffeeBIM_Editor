@@ -1486,7 +1486,9 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
       // Handle different tools
       switch (activeTool) {
         case 'select':
-          clearSelection();
+          // Selection is handled entirely in handleMouseDown/handleMouseUp for box selection
+          // Don't clear selection here as it would override box selection results
+          // Simple clicks are already handled in handleMouseUp (small box case)
           break;
 
         case 'wall':
@@ -2056,10 +2058,11 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
 
   // Render a space (room) as filled polygon with name label
   // Uses same color scheme as SpaceMesh.tsx (3D) and SpaceProperties.tsx for consistency
+  // Render space fill only (labels rendered separately on top)
   const renderSpace = (element: BimElement) => {
     if (!element.spaceData) return null;
 
-    const { boundaryPolygon, spaceType, area, gastroCategory } = element.spaceData;
+    const { boundaryPolygon, spaceType, gastroCategory } = element.spaceData;
     if (!boundaryPolygon || boundaryPolygon.length < 3) return null;
 
     const isSelected = selectedIds.has(element.id);
@@ -2073,6 +2076,30 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
       const screen = worldToScreen(p.x, p.y);
       return [screen.x, screen.y];
     });
+
+    return (
+      <Group key={element.id} onClick={(e) => handleElementClick(element.id, e)}>
+        {/* Space fill polygon */}
+        <Line
+          points={screenPoints}
+          closed
+          fill={isSelected ? 'rgba(255, 165, 0, 0.3)' : fillColor}
+          stroke={isSelected ? SPACE_COLOR_SELECTED : SPACE_COLOR}
+          strokeWidth={isSelected ? 2 : 1}
+          dash={[4, 2]}
+        />
+      </Group>
+    );
+  };
+
+  // Render space labels only (rendered on top of all other elements)
+  const renderSpaceLabel = (element: BimElement) => {
+    if (!element.spaceData) return null;
+
+    const { boundaryPolygon, area, gastroCategory } = element.spaceData;
+    if (!boundaryPolygon || boundaryPolygon.length < 3) return null;
+
+    const isSelected = selectedIds.has(element.id);
 
     // Calculate centroid for label positioning
     let cx = 0;
@@ -2098,16 +2125,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     const labelOffsetY = categoryLabel ? -24 : -18;
 
     return (
-      <Group key={element.id} onClick={(e) => handleElementClick(element.id, e)}>
-        {/* Space fill polygon */}
-        <Line
-          points={screenPoints}
-          closed
-          fill={isSelected ? 'rgba(255, 165, 0, 0.3)' : fillColor}
-          stroke={isSelected ? SPACE_COLOR_SELECTED : SPACE_COLOR}
-          strokeWidth={isSelected ? 2 : 1}
-          dash={[4, 2]}
-        />
+      <Group key={`${element.id}-label`}>
         {/* Space name label */}
         <Rect
           x={labelPos.x - 50}
@@ -2604,12 +2622,20 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         if (stair) rendered.push(stair);
       });
 
-    // 7. Render furniture/assets (top layer)
+    // 7. Render furniture/assets
     elements
       .filter((e) => e.type === 'furniture')
       .forEach((element) => {
         const furniture = renderFurniture(element);
         if (furniture) rendered.push(furniture);
+      });
+
+    // 8. Render space labels last (top layer - above slabs and other elements)
+    elements
+      .filter((e) => e.type === 'space')
+      .forEach((element) => {
+        const label = renderSpaceLabel(element);
+        if (label) rendered.push(label);
       });
 
     return rendered;

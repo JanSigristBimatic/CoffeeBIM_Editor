@@ -1,5 +1,4 @@
 import { Suspense, useMemo, useRef, useEffect, useState } from 'react';
-import { useLoader } from '@react-three/fiber';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
@@ -252,80 +251,131 @@ function GltfModel({
   );
 }
 
-// OBJ Model Loader Component
+// OBJ Model Loader Component with proper error handling
 function ObjModel({
   url,
   scale,
   selected,
   onBoundsCalculated,
   onMeshExtracted,
+  onError,
+  onLoadingChange,
 }: {
   url: string;
   scale: number;
   selected: boolean;
   onBoundsCalculated?: (bounds: { width: number; depth: number; height: number }) => void;
   onMeshExtracted?: (meshData: MeshData) => void;
+  onError?: (error: Error) => void;
+  onLoadingChange?: (loading: boolean) => void;
 }) {
-  const obj = useLoader(OBJLoader, url);
-  const clonedObj = useMemo(() => obj.clone(), [obj]);
-  const groupRef = useRef<Group>(null);
+  const [loadedObj, setLoadedObj] = useState<Group | null>(null);
+  const [loadError, setLoadError] = useState<Error | null>(null);
+  const [offset, setOffset] = useState<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
 
-  // Apply material and calculate bounds
+  // Load OBJ with error handling
   useEffect(() => {
-    if (!clonedObj) return;
+    let mounted = true;
+    const objLoader = new OBJLoader();
 
-    // Calculate bounding box
-    const box = new Box3().setFromObject(clonedObj);
-    const size = new Vector3();
-    box.getSize(size);
+    // Signal loading started
+    onLoadingChange?.(true);
 
-    // Report RAW bounds (without scale) - auto-scale will be calculated in handleBoundsCalculated
-    if (onBoundsCalculated) {
-      onBoundsCalculated({
-        width: size.x,
-        depth: size.z,
-        height: size.y,
-      });
-    }
+    objLoader.load(
+      url,
+      (obj: Group) => {
+        if (mounted) {
+          const clonedObj = obj.clone();
 
-    // Extract mesh data for IFC export
-    if (onMeshExtracted) {
-      const meshData = extractMeshData(clonedObj, scale);
-      if (meshData) {
-        onMeshExtracted(meshData);
+          // Calculate bounding box
+          const box = new Box3().setFromObject(clonedObj);
+          const size = new Vector3();
+          const center = new Vector3();
+          box.getSize(size);
+          box.getCenter(center);
+
+          // Report RAW bounds (without scale)
+          if (onBoundsCalculated) {
+            onBoundsCalculated({
+              width: size.x,
+              depth: size.z,
+              height: size.y,
+            });
+          }
+
+          // Extract mesh data for IFC export
+          if (onMeshExtracted) {
+            const meshData = extractMeshData(clonedObj, scale);
+            if (meshData) {
+              onMeshExtracted(meshData);
+            }
+          }
+
+          // Calculate offset to center model and place on ground
+          setOffset({
+            x: -center.x,
+            y: -center.y + size.y / 2,
+            z: -center.z,
+          });
+
+          // Apply default material with selection highlight
+          const material = new MeshStandardMaterial({
+            color: selected ? '#90caf9' : '#aaaaaa',
+            roughness: 0.7,
+            metalness: 0.2,
+          });
+
+          if (selected) {
+            material.emissive.setHex(0x4488ff);
+            material.emissiveIntensity = 0.3;
+          }
+
+          clonedObj.traverse((child) => {
+            if (child instanceof Mesh) {
+              child.material = material;
+            }
+          });
+
+          setLoadedObj(clonedObj);
+          setLoadError(null);
+          onLoadingChange?.(false);
+        }
+      },
+      undefined,
+      (error: unknown) => {
+        if (mounted) {
+          console.warn('OBJ load error:', error);
+          const err = new Error(
+            'OBJ-Modell konnte nicht geladen werden. Die Datei ist möglicherweise beschädigt oder die URL ungültig.'
+          );
+          setLoadError(err);
+          onError?.(err);
+          onLoadingChange?.(false);
+        }
       }
-    }
+    );
 
-    // Center the model at origin (in model's Y-up space)
-    // After -90° X rotation: model Y becomes world Z
-    const center = new Vector3();
-    box.getCenter(center);
-    clonedObj.position.sub(center);
-    clonedObj.position.y += size.y / 2; // Lift to ground in model's Y-up space
+    return () => {
+      mounted = false;
+    };
+  }, [url, scale, selected]);
 
-    // Apply default material with selection highlight
-    const material = new MeshStandardMaterial({
-      color: selected ? '#90caf9' : '#aaaaaa',
-      roughness: 0.7,
-      metalness: 0.2,
-    });
+  // Show error state
+  if (loadError) {
+    return null; // Parent will show fallback
+  }
 
-    if (selected) {
-      material.emissive.setHex(0x4488ff);
-      material.emissiveIntensity = 0.3;
-    }
-
-    clonedObj.traverse((child) => {
-      if (child instanceof Mesh) {
-        child.material = material;
-      }
-    });
-  }, [clonedObj, scale, selected, onBoundsCalculated, onMeshExtracted]);
+  // Show loading state
+  if (!loadedObj) {
+    return null;
+  }
 
   // OBJ models are Y-up, rotate +90° around X to convert to Z-up (Y → +Z)
   return (
-    <group ref={groupRef} scale={[scale, scale, scale]} rotation={[Math.PI / 2, 0, 0]}>
-      <primitive object={clonedObj} />
+    <group scale={[scale, scale, scale]} rotation={[Math.PI / 2, 0, 0]}>
+      <group position={[offset.x, offset.y, offset.z]}>
+        <primitive object={loadedObj} />
+      </group>
     </group>
   );
 }
@@ -410,13 +460,20 @@ function ModelLoader({
       );
     } else if (format === 'obj') {
       return (
-        <ObjModel
-          url={url}
-          scale={scale}
-          selected={selected}
-          onBoundsCalculated={onBoundsCalculated}
-          onMeshExtracted={onMeshExtracted}
-        />
+        <>
+          {loading && (
+            <FallbackBox width={width} depth={depth} height={height} selected={selected} />
+          )}
+          <ObjModel
+            url={url}
+            scale={scale}
+            selected={selected}
+            onBoundsCalculated={onBoundsCalculated}
+            onMeshExtracted={onMeshExtracted}
+            onError={(err) => setError(err.message)}
+            onLoadingChange={setLoading}
+          />
+        </>
       );
     }
   } catch (e) {

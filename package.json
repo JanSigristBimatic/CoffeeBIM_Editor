@@ -18,6 +18,7 @@
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-dropdown-menu": "^2.1.2",
+    "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-select": "^2.1.2",
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-tabs": "^1.1.1",
@@ -38,6 +39,7 @@
     "three": "^0.170.0",
     "uuid": "^11.0.3",
     "web-ifc": "^0.0.66",
+    "yuka": "^0.7.8",
     "zundo": "^2.3.0",
     "zustand": "^5.0.1"
   },

@@ -158,6 +158,20 @@ export const ASSET_CATALOG: AssetCategory[] = [
       },
     ],
   },
+  {
+    id: 'people',
+    name: 'Personen',
+    icon: '',
+    items: [
+      {
+        id: 'mann',
+        name: 'Mann',
+        path: '/assets/people/Mann.obj',
+        defaultScale: 0.1,
+        dimensions: { width: 0.5, depth: 0.3, height: 1.8 },
+      },
+    ],
+  },
 ];
 
 /**
@@ -212,6 +226,8 @@ export function mapAssetCategoryToFurnitureCategory(categoryId: string): string 
       return 'furniture';
     case 'lighting':
       return 'lighting';
+    case 'people':
+      return 'person';
     default:
       return 'other';
   }

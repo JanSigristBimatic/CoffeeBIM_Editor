@@ -7,3 +7,5 @@ export { useViewStore } from './useViewStore';
 export { usePdfUnderlayStore, pdfToWorld } from './usePdfUnderlayStore';
 export { useMeasurementStore } from './useMeasurementStore';
 export type { Measurement, MeasurementPlacementState } from './useMeasurementStore';
+export { useEvacuationStore } from './useEvacuationStore';
+export type { EvacuationAgent, ExitDoor } from './useEvacuationStore';

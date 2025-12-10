@@ -3,7 +3,6 @@ import { useViewStore } from '@/store';
 import { cn } from '@/lib/utils';
 import { Canvas2D } from './Canvas2D';
 import { Canvas3D } from './Canvas3D';
-import { BoxSelectionOverlay } from './BoxSelection3D';
 
 export function SplitView() {
   const { viewMode, splitRatio, setSplitRatio } = useViewStore();
@@ -42,9 +41,8 @@ export function SplitView() {
   // Only 3D view
   if (viewMode === '3d') {
     return (
-      <div className="w-full h-full relative">
+      <div className="w-full h-full">
         <Canvas3D />
-        <BoxSelectionOverlay />
       </div>
     );
   }
@@ -76,9 +74,8 @@ export function SplitView() {
       />
 
       {/* 3D Panel (right) */}
-      <div style={{ width: secondarySize }} className="overflow-hidden relative">
+      <div style={{ width: secondarySize }} className="overflow-hidden">
         <Canvas3D />
-        <BoxSelectionOverlay />
       </div>
     </div>
   );

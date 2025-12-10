@@ -84,12 +84,16 @@ export function useAssetPlacement() {
       // Convert rotation from degrees to radians
       const rotationRad = (rotation * Math.PI) / 180;
 
+      // Determine model format from file extension
+      const extension = asset.path.split('.').pop()?.toLowerCase() || 'glb';
+      const modelFormat = extension === 'obj' ? 'obj' : extension === 'gltf' ? 'gltf' : 'glb';
+
       // Use catalog dimensions for 2D display, actual model scale for 3D
       const element = createFurniture({
         name: asset.name,
         category: furnitureCategory,
         modelUrl: asset.path,
-        modelFormat: 'glb',
+        modelFormat,
         originalFileName: asset.path.split('/').pop() || asset.id,
         position: {
           x: position.x,

@@ -14,6 +14,7 @@ import {
   EditActionsGroup,
   SpaceActionsGroup,
   ImportExportGroup,
+  EvacuationGroup,
   ActionButton,
 } from './toolbar-components';
 
@@ -95,6 +96,7 @@ export function Toolbar() {
       <PdfUnderlayGroup onOpenPdfDialog={() => setShowPdfDialog(true)} />
       <EditActionsGroup />
       <SpaceActionsGroup />
+      <EvacuationGroup />
       <ImportExportGroup
         isExporting={isExporting}
         onExport={handleExport}

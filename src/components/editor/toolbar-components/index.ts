@@ -6,3 +6,4 @@ export { PdfUnderlayGroup } from './PdfUnderlayGroup';
 export { EditActionsGroup } from './EditActionsGroup';
 export { SpaceActionsGroup } from './SpaceActionsGroup';
 export { ImportExportGroup } from './ImportExportGroup';
+export { EvacuationGroup } from './EvacuationGroup';
