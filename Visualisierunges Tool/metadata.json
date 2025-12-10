@@ -1,0 +1,5 @@
+{
+  "name": "BIM Vision Editor",
+  "description": "A 3D BIM model viewer with AI-powered image editing capabilities using Gemini 2.5 Flash Image (Nano Banana).",
+  "requestFramePermissions": []
+}

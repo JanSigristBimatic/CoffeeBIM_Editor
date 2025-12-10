@@ -1,18 +1,17 @@
 /**
  * Gemini API Client - Integration mit Google's Gemini für Bildgenerierung
  *
+ * Verwendet das offizielle @google/genai SDK für zuverlässige API-Calls.
  * Alle API-Calls erfolgen direkt vom Browser (client-side).
  * Der API-Key wird nur lokal verwendet und nie an andere Server gesendet.
  */
 
+import { GoogleGenAI } from '@google/genai';
 import type { VisualizationStyle } from '@/store/useSettingsStore';
 import { buildPrompt } from './prompts';
 
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-
-// Models that support image generation
-const IMAGE_GEN_MODEL = 'gemini-2.0-flash-exp-image-generation';
-const FALLBACK_MODEL = 'gemini-2.0-flash-exp';
+// Model für Bildgenerierung (Nano Banana)
+const IMAGE_MODEL = 'gemini-2.5-flash-preview-04-17';
 
 export interface GenerationResult {
   success: boolean;
@@ -38,7 +37,6 @@ export const validateApiKey = async (apiKey: string): Promise<ValidationResult> 
 
   try {
     // Use models.list endpoint - much lighter than generateContent
-    // This only checks if the key is valid without consuming quota
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
       {
@@ -78,6 +76,7 @@ export const validateApiKey = async (apiKey: string): Promise<ValidationResult> 
 
 /**
  * Generates a visualization using Gemini API with image generation
+ * Uses the official @google/genai SDK
  */
 export const generateVisualization = async (
   apiKey: string,
@@ -85,127 +84,89 @@ export const generateVisualization = async (
   style: VisualizationStyle
 ): Promise<GenerationResult> => {
   try {
+    // Initialize the SDK with the user's API key
+    const ai = new GoogleGenAI({ apiKey });
+
     // Convert screenshot to base64
     const base64Image = await blobToBase64(screenshot);
     const prompt = buildPrompt(style);
 
-    // Try image generation model first
-    let result = await tryGenerateWithModel(
-      apiKey,
-      IMAGE_GEN_MODEL,
-      base64Image,
-      prompt
-    );
+    // Build the full prompt for photorealistic rendering
+    const fullPrompt = `Create a high-quality, photorealistic visualization of this 3D BIM model view. Maintain the exact camera angle, perspective, and building structure. ${prompt}`;
 
-    // If that fails, try fallback model
-    if (!result.success && result.error?.includes('not found')) {
-      console.log('Image gen model not available, trying fallback...');
-      result = await tryGenerateWithModel(
-        apiKey,
-        FALLBACK_MODEL,
-        base64Image,
-        prompt
-      );
-    }
-
-    return result;
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unbekannter Fehler',
-    };
-  }
-};
-
-/**
- * Try generating with a specific model
- */
-async function tryGenerateWithModel(
-  apiKey: string,
-  modelId: string,
-  base64Image: string,
-  prompt: string
-): Promise<GenerationResult> {
-  // Build request body based on model capabilities
-  const requestBody: Record<string, unknown> = {
-    contents: [
-      {
+    // Call the API using the SDK
+    const response = await ai.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: {
         parts: [
-          { text: prompt },
           {
-            inline_data: {
-              mime_type: 'image/png',
+            inlineData: {
               data: base64Image,
+              mimeType: 'image/png',
             },
+          },
+          {
+            text: fullPrompt,
           },
         ],
       },
-    ],
-  };
+    });
 
-  // Only add responseModalities for image generation models
-  // Don't set responseMimeType - that's for structured text output only
-  if (modelId.includes('image-generation')) {
-    requestBody.generationConfig = {
-      responseModalities: ['IMAGE', 'TEXT'],
-    };
-  }
+    // Extract image from response
+    if (response.candidates && response.candidates[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData?.data) {
+          const imageBlob = base64ToBlob(part.inlineData.data, 'image/png');
+          const imageUrl = URL.createObjectURL(imageBlob);
 
-  const response = await fetch(
-    `${GEMINI_API_BASE}/${modelId}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: error.error?.message || `API Error: ${response.status}`,
-      model: modelId,
-    };
-  }
-
-  const result = await response.json();
-
-  // Extract generated image from response
-  const candidates = result.candidates || [];
-  for (const candidate of candidates) {
-    const parts = candidate.content?.parts || [];
-    for (const part of parts) {
-      if (part.inline_data?.data) {
-        const imageBlob = base64ToBlob(part.inline_data.data, 'image/png');
-        const imageUrl = URL.createObjectURL(imageBlob);
-
-        return {
-          success: true,
-          imageUrl,
-          imageBlob,
-          model: modelId,
-        };
+          return {
+            success: true,
+            imageUrl,
+            imageBlob,
+            model: IMAGE_MODEL,
+          };
+        }
       }
     }
-  }
 
-  // No image in response - might be text-only response
-  const textContent = candidates[0]?.content?.parts?.[0]?.text;
-  if (textContent) {
+    // Check if we got text instead of image
+    const textContent = response.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (textContent) {
+      return {
+        success: false,
+        error: `Model gab Text statt Bild zurück. Versuche es mit einem anderen Stil.`,
+        model: IMAGE_MODEL,
+      };
+    }
+
     return {
       success: false,
-      error: `Model returned text instead of image: "${textContent.substring(0, 100)}..."`,
-      model: modelId,
+      error: 'Keine Bildgenerierung in der Antwort',
+      model: IMAGE_MODEL,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unbekannter Fehler';
+
+    // Handle specific error cases
+    if (errorMessage.includes('429') || errorMessage.includes('quota')) {
+      return {
+        success: false,
+        error: 'Rate Limit erreicht - bitte warte kurz und versuche es erneut',
+      };
+    }
+    if (errorMessage.includes('API key')) {
+      return {
+        success: false,
+        error: 'API-Key ungültig oder abgelaufen',
+      };
+    }
+
+    return {
+      success: false,
+      error: errorMessage,
     };
   }
-
-  return {
-    success: false,
-    error: 'Keine Bildgenerierung verfügbar - Model unterstützt möglicherweise keine Bilder',
-    model: modelId,
-  };
-}
+};
 
 // ============================================================================
 // Helper Functions
