@@ -83,6 +83,7 @@ export function Canvas3D() {
       }}
       shadows={!is2D}
       onPointerMissed={handlePointerMissed}
+      gl={{ preserveDrawingBuffer: true }} // Required for screenshots
     >
       <Suspense fallback={null}>
         {/* 2D Camera positioning */}
