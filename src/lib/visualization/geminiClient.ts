@@ -28,7 +28,8 @@ export interface ValidationResult {
 }
 
 /**
- * Validates a Gemini API key by making a simple request
+ * Validates a Gemini API key by listing available models
+ * This is a lightweight call that doesn't consume generation quota
  */
 export const validateApiKey = async (apiKey: string): Promise<ValidationResult> => {
   if (!apiKey || apiKey.trim().length < 10) {
@@ -36,14 +37,13 @@ export const validateApiKey = async (apiKey: string): Promise<ValidationResult> 
   }
 
   try {
+    // Use models.list endpoint - much lighter than generateContent
+    // This only checks if the key is valid without consuming quota
     const response = await fetch(
-      `${GEMINI_API_BASE}/${FALLBACK_MODEL}:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
       {
-        method: 'POST',
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Hello, respond with just "OK"' }] }],
-        }),
       }
     );
 
@@ -57,8 +57,8 @@ export const validateApiKey = async (apiKey: string): Promise<ValidationResult> 
     if (response.status === 400 && errorMessage.includes('API key')) {
       return { valid: false, error: 'Ungültiger API-Key' };
     }
-    if (response.status === 403) {
-      return { valid: false, error: 'API-Key hat keine Berechtigung' };
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: 'Ungültiger API-Key oder keine Berechtigung' };
     }
     if (response.status === 429) {
       return { valid: false, error: 'Rate Limit erreicht - bitte später versuchen' };
