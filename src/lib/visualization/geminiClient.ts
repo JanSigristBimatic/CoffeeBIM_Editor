@@ -11,7 +11,7 @@ import type { VisualizationStyle } from '@/store/useSettingsStore';
 import { buildPrompt } from './prompts';
 
 // Model für Bildgenerierung (Nano Banana)
-const IMAGE_MODEL = 'gemini-2.5-flash-preview-04-17';
+const IMAGE_MODEL = 'gemini-2.5-flash-image';
 
 export interface GenerationResult {
   success: boolean;
