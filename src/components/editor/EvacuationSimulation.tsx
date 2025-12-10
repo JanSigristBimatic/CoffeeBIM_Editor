@@ -5,8 +5,8 @@
  * Uses Yuka for steering behaviors to simulate crowd evacuation to exits.
  */
 
-import { useRef, useMemo } from 'react';
-import { useFrame, useLoader } from '@react-three/fiber';
+import { useRef, useState, useEffect } from 'react';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { useEvacuationStore, type EvacuationAgent } from '@/store/useEvacuationStore';
@@ -81,25 +81,43 @@ function AgentMesh({ agent, geometry }: AgentMeshProps) {
 // ============================================================================
 
 function usePersonGeometry(): THREE.BufferGeometry | null {
-  try {
-    const obj = useLoader(OBJLoader, PERSON_MODEL_PATH);
+  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const [loadAttempted, setLoadAttempted] = useState(false);
 
-    return useMemo(() => {
-      // Extract geometry from loaded OBJ
-      let geometry: THREE.BufferGeometry | null = null;
+  useEffect(() => {
+    if (loadAttempted) return;
 
-      obj.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.geometry && !geometry) {
-          geometry = child.geometry.clone();
+    const loader = new OBJLoader();
+
+    loader.load(
+      PERSON_MODEL_PATH,
+      (obj) => {
+        // Success: extract geometry from loaded OBJ
+        let extractedGeometry: THREE.BufferGeometry | null = null;
+
+        obj.traverse((child) => {
+          if (child instanceof THREE.Mesh && child.geometry && !extractedGeometry) {
+            extractedGeometry = child.geometry.clone();
+          }
+        });
+
+        if (extractedGeometry) {
+          setGeometry(extractedGeometry);
+        } else {
+          console.warn('[CoffeeBIM] Person model loaded but no geometry found, using fallback');
         }
-      });
+        setLoadAttempted(true);
+      },
+      undefined, // onProgress
+      (error) => {
+        // Error: log and use fallback
+        console.warn('[CoffeeBIM] Could not load person model, using fallback:', error);
+        setLoadAttempted(true);
+      }
+    );
+  }, [loadAttempted]);
 
-      return geometry;
-    }, [obj]);
-  } catch {
-    console.warn('Could not load person model, using fallback');
-    return null;
-  }
+  return geometry;
 }
 
 // ============================================================================

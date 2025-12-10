@@ -126,30 +126,37 @@ async function tryGenerateWithModel(
   base64Image: string,
   prompt: string
 ): Promise<GenerationResult> {
+  // Build request body based on model capabilities
+  const requestBody: Record<string, unknown> = {
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: 'image/png',
+              data: base64Image,
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  // Only add responseModalities for image generation models
+  // Don't set responseMimeType - that's for structured text output only
+  if (modelId.includes('image-generation')) {
+    requestBody.generationConfig = {
+      responseModalities: ['IMAGE', 'TEXT'],
+    };
+  }
+
   const response = await fetch(
     `${GEMINI_API_BASE}/${modelId}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              {
-                inline_data: {
-                  mime_type: 'image/png',
-                  data: base64Image,
-                },
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseModalities: ['image', 'text'],
-          responseMimeType: 'image/png',
-        },
-      }),
+      body: JSON.stringify(requestBody),
     }
   );
 
