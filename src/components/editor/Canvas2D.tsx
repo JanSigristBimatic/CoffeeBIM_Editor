@@ -92,7 +92,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
   const [dimensions, setDimensions] = useState({ width: propWidth ?? 800, height: propHeight ?? 600 });
 
   // Store hooks
-  const { cad2dZoom, cad2dPanX, cad2dPanY, setCad2dZoom, setCad2dPan, showGrid, gridSize, showDimensions, dimensionSettings, snapSettings, zoomToExtentsTrigger } = useViewStore();
+  const { cad2dZoom, cad2dPanX, cad2dPanY, setCad2dZoom, setCad2dPan, showGrid, gridSize, showDimensions, dimensionSettings, snapSettings, zoomToExtentsTrigger, showSpaces, showSpaceLabels } = useViewStore();
   const { getAllElements, getElementsByStorey, addElement, updateElement, getWallsForStorey } = useElementStore();
   const {
     selectedIds,
@@ -2560,12 +2560,14 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     const rendered: JSX.Element[] = [];
 
     // 0. Render spaces first (bottom-most layer - room fills with labels)
-    elements
-      .filter((e) => e.type === 'space')
-      .forEach((element) => {
-        const space = renderSpace(element);
-        if (space) rendered.push(space);
-      });
+    if (showSpaces) {
+      elements
+        .filter((e) => e.type === 'space')
+        .forEach((element) => {
+          const space = renderSpace(element);
+          if (space) rendered.push(space);
+        });
+    }
 
     // 1. Render slabs (above spaces)
     elements
@@ -2631,12 +2633,14 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
       });
 
     // 8. Render space labels last (top layer - above slabs and other elements)
-    elements
-      .filter((e) => e.type === 'space')
-      .forEach((element) => {
-        const label = renderSpaceLabel(element);
-        if (label) rendered.push(label);
-      });
+    if (showSpaceLabels) {
+      elements
+        .filter((e) => e.type === 'space')
+        .forEach((element) => {
+          const label = renderSpaceLabel(element);
+          if (label) rendered.push(label);
+        });
+    }
 
     return rendered;
   };

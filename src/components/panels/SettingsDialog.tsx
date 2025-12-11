@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { useSettingsStore } from '@/store';
 import { validateApiKey, type ValidationResult } from '@/lib/visualization';
+import { useOpenCascade } from '@/hooks';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -30,7 +31,12 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setGeminiApiKey,
     setKeyValidated,
     clearSettings,
+    useOpenCascade: occtEnabled,
+    setUseOpenCascade,
   } = useSettingsStore();
+
+  // OpenCascade hook (auto-init disabled, we control it manually)
+  const { isReady: occtReady, isLoading: occtLoading, error: occtError, initialize: initOcct } = useOpenCascade(false);
 
   const [keyInput, setKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -227,6 +233,96 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               </Button>
             </div>
           )}
+
+          {/* OpenCascade Section */}
+          <div className="pt-4 border-t space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                  <span>⚙️</span> OpenCascade.js (Experimental)
+                </h4>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Präzise CAD-Geometrie für Wände und Theken
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={occtEnabled}
+                onClick={() => {
+                  const newValue = !occtEnabled;
+                  setUseOpenCascade(newValue);
+                  // Auto-initialize when enabling
+                  if (newValue && !occtReady && !occtLoading) {
+                    initOcct();
+                  }
+                }}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  occtEnabled ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    occtEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* OCCT Status */}
+            {occtEnabled && (
+              <div className="space-y-2">
+                {occtLoading && (
+                  <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 p-2 rounded">
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Lade OpenCascade (~30 MB)...
+                  </div>
+                )}
+
+                {occtReady && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-2 rounded">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    OpenCascade bereit
+                  </div>
+                )}
+
+                {occtError && (
+                  <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-2 rounded">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                    Fehler: {occtError}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* OCCT Info */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <h4 className="text-sm font-medium text-amber-800 mb-1 flex items-center gap-2">
+                <span>⚠️</span> Hinweis
+              </h4>
+              <ul className="text-xs text-amber-700 space-y-1">
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-400">•</span>
+                  <span>Experimentelle Funktion - kann zu Fehlern führen</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-400">•</span>
+                  <span>Lädt ~30 MB WASM-Modul beim ersten Aktivieren</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-400">•</span>
+                  <span>Ermöglicht Boolean-Operationen und Fillets</span>
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
       </DialogContent>
 

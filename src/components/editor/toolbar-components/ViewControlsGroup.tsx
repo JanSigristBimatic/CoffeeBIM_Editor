@@ -1,9 +1,11 @@
-import { Grid2X2, RulerIcon, Columns, Box, Layout, Maximize2, Focus } from 'lucide-react';
+import { RulerIcon, Columns, Box, Layout, Focus, Eye, Check } from 'lucide-react';
 import { useViewStore } from '@/store';
 import { ToggleButton, ActionButton } from './ToolbarButtons';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
+import { cn } from '@/lib/utils';
 
 export function ViewControlsGroup() {
-  const { toggleGrid, showGrid, snapSettings, toggleSnapOrthogonal, viewMode, cycleViewMode, showDimensions, toggleDimensions, triggerZoomToExtents } = useViewStore();
+  const { toggleGrid, showGrid, snapSettings, toggleSnapOrthogonal, viewMode, cycleViewMode, showDimensions, toggleDimensions, triggerZoomToExtents, showSpaces, toggleSpaces, showSpaceLabels, toggleSpaceLabels } = useViewStore();
 
   // Icon and label based on view mode
   const getViewIcon = () => {
@@ -39,26 +41,68 @@ export function ViewControlsGroup() {
         title="Ansicht wechseln: 2D → 3D → Split (V)"
       />
       <ToggleButton
-        icon={<Grid2X2 size={20} />}
-        label="Raster"
-        isActive={showGrid}
-        onClick={toggleGrid}
-        title="Raster ein/aus (G)"
-      />
-      <ToggleButton
         icon={<RulerIcon size={20} />}
         label="Ortho"
         isActive={snapSettings.orthogonal}
         onClick={toggleSnapOrthogonal}
         title="Orthogonal-Modus ein/aus (O)"
       />
-      <ToggleButton
-        icon={<Maximize2 size={20} />}
-        label="Maße"
-        isActive={showDimensions}
-        onClick={toggleDimensions}
-        title="Bemaßungen ein/aus (D)"
-      />
+      {/* Anzeige-Dropdown */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            className={cn(
+              'flex flex-col items-center justify-center p-2 rounded-md transition-colors',
+              'hover:bg-accent hover:text-accent-foreground',
+              (showGrid || showDimensions || showSpaces || showSpaceLabels) && 'bg-accent'
+            )}
+            title="Anzeige-Einstellungen"
+          >
+            <Eye size={20} />
+            <span className="text-xs mt-1">Anzeige</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-48 p-2" align="start">
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={toggleGrid}
+              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-sm w-full text-left"
+            >
+              <div className={cn('w-4 h-4 flex items-center justify-center', showGrid ? 'text-primary' : 'text-transparent')}>
+                <Check size={14} />
+              </div>
+              Raster
+            </button>
+            <button
+              onClick={toggleDimensions}
+              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-sm w-full text-left"
+            >
+              <div className={cn('w-4 h-4 flex items-center justify-center', showDimensions ? 'text-primary' : 'text-transparent')}>
+                <Check size={14} />
+              </div>
+              Bemaßungen
+            </button>
+            <button
+              onClick={toggleSpaces}
+              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-sm w-full text-left"
+            >
+              <div className={cn('w-4 h-4 flex items-center justify-center', showSpaces ? 'text-primary' : 'text-transparent')}>
+                <Check size={14} />
+              </div>
+              Räume
+            </button>
+            <button
+              onClick={toggleSpaceLabels}
+              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-sm w-full text-left"
+            >
+              <div className={cn('w-4 h-4 flex items-center justify-center', showSpaceLabels ? 'text-primary' : 'text-transparent')}>
+                <Check size={14} />
+              </div>
+              Raumbeschriftungen
+            </button>
+          </div>
+        </PopoverContent>
+      </Popover>
       <ActionButton
         icon={<Focus size={20} />}
         label="Zoom"

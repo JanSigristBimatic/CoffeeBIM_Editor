@@ -30,6 +30,9 @@ interface ViewState {
   // Dimensions
   showDimensions: boolean;
   dimensionSettings: DimensionSettings;
+  // Spaces visibility
+  showSpaces: boolean;
+  showSpaceLabels: boolean;
 }
 
 interface ViewActions {
@@ -73,6 +76,11 @@ interface ViewActions {
   setShowDimensions: (show: boolean) => void;
   toggleDimensions: () => void;
   setDimensionSettings: (settings: Partial<DimensionSettings>) => void;
+  // Spaces visibility
+  setShowSpaces: (show: boolean) => void;
+  toggleSpaces: () => void;
+  setShowSpaceLabels: (show: boolean) => void;
+  toggleSpaceLabels: () => void;
 }
 
 const defaultSnapSettings: SnapSettings = {
@@ -109,6 +117,9 @@ export const useViewStore = create<ViewState & ViewActions>((set) => ({
   // Dimensions defaults
   showDimensions: true, // Show dimensions by default
   dimensionSettings: DEFAULT_DIMENSION_SETTINGS,
+  // Spaces visibility defaults
+  showSpaces: true, // Show spaces by default
+  showSpaceLabels: true, // Show space labels by default
 
   setViewMode: (mode) => set({ viewMode: mode }),
 
@@ -225,4 +236,10 @@ export const useViewStore = create<ViewState & ViewActions>((set) => ({
     set((state) => ({
       dimensionSettings: { ...state.dimensionSettings, ...settings },
     })),
+
+  // Spaces visibility
+  setShowSpaces: (show) => set({ showSpaces: show }),
+  toggleSpaces: () => set((state) => ({ showSpaces: !state.showSpaces })),
+  setShowSpaceLabels: (show) => set({ showSpaceLabels: show }),
+  toggleSpaceLabels: () => set((state) => ({ showSpaceLabels: !state.showSpaceLabels })),
 }));

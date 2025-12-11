@@ -14,7 +14,10 @@ export default defineConfig({
     allowedHosts: ['host.docker.internal'],
   },
   optimizeDeps: {
-    exclude: ['web-ifc'],
+    exclude: ['web-ifc', 'opencascade.js'],
+  },
+  worker: {
+    format: 'es',
   },
   assetsInclude: ['**/*.wasm'],
 });

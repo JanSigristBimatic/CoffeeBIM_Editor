@@ -16,3 +16,4 @@ export { useStorageSync } from './useStorageSync';
 export { useHistory } from './useHistory';
 export { useStoreyElevation } from './useStoreyElevation';
 export { useElementSelection } from './useElementSelection';
+export { useOpenCascade } from './useOpenCascade';

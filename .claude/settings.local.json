@@ -13,7 +13,8 @@
       "Bash(npx vercel:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: major 2D canvas improvements, ESLint fixes, and UI enhancements\n\n- Extended Canvas2D with advanced editing and interaction features\n- Fixed all ESLint errors (React hooks, TypeScript types)\n- Enhanced IFC exporter/importer with better type safety\n- Improved Wall, Slab, and Stair element handling\n- Added WallParameterPanel and BimaticLink components\n- Added Bimatic logo branding\n- Updated tool store with new capabilities\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(npm install:*)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: use official @google/genai SDK for image generation\n\n- Replace manual fetch with @google/genai SDK\n- Use gemini-2.5-flash-preview-04-17 model (Nano Banana)\n- Cleaner API handling with proper error messages\n- Based on working example from Visualisierunges Tool\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: use official @google/genai SDK for image generation\n\n- Replace manual fetch with @google/genai SDK\n- Use gemini-2.5-flash-preview-04-17 model (Nano Banana)\n- Cleaner API handling with proper error messages\n- Based on working example from Visualisierunges Tool\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

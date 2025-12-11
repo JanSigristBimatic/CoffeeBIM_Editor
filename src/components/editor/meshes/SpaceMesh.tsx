@@ -10,6 +10,7 @@ interface SpaceMeshProps {
   selected: boolean;
   visible?: boolean;
   opacity?: number;
+  showLabel?: boolean;
 }
 
 // Fallback colors based on IFC space type
@@ -33,6 +34,7 @@ export function SpaceMesh({
   selected,
   visible = true,
   opacity = 0.3,
+  showLabel = true,
 }: SpaceMeshProps) {
   const meshRef = useRef<Mesh>(null);
   const { handlers } = useDragElement(element);
@@ -141,8 +143,8 @@ export function SpaceMesh({
         <lineSegments geometry={edgesGeometry} material={edgeMaterial} />
       )}
 
-      {/* Space label (always visible, positioned at floor level) */}
-      <SpaceLabel element={element} selected={selected} showArea={true} />
+      {/* Space label (conditionally visible, positioned at floor level) */}
+      {showLabel && <SpaceLabel element={element} selected={selected} showArea={true} />}
     </group>
   );
 }

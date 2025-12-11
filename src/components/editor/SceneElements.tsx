@@ -33,7 +33,7 @@ export function SceneElements() {
   const { activeStoreyId } = useProjectStore();
   const { getElementsByStorey } = useElementStore();
   const { isSelected } = useSelectionStore();
-  const { showStoreyAbove, showStoreyBelow, ghostOpacity, showDimensions, dimensionSettings } = useViewStore();
+  const { showStoreyAbove, showStoreyBelow, ghostOpacity, showDimensions, dimensionSettings, showSpaces, showSpaceLabels } = useViewStore();
   const { storeyAbove, storeyBelow } = useAdjacentStoreys();
   const { measurements, placementState, selectedMeasurementId, selectMeasurement } = useMeasurementStore();
 
@@ -83,6 +83,8 @@ export function SceneElements() {
           key={element.id}
           element={element}
           selected={isSelected(element.id)}
+          showSpaces={showSpaces}
+          showSpaceLabels={showSpaceLabels}
         />
       ))}
 
@@ -131,13 +133,15 @@ interface ElementMeshProps {
   selected: boolean;
   isGhost?: boolean;
   ghostOpacity?: number;
+  showSpaces?: boolean;
+  showSpaceLabels?: boolean;
 }
 
 /**
  * Routes element to appropriate mesh component based on type
  * Ghost elements are rendered with reduced opacity and no interaction
  */
-function ElementMesh({ element, selected, isGhost = false, ghostOpacity = 0.25 }: ElementMeshProps) {
+function ElementMesh({ element, selected, isGhost = false, ghostOpacity = 0.25, showSpaces = true, showSpaceLabels = true }: ElementMeshProps) {
   const meshProps = { element, selected: isGhost ? false : selected, isGhost, ghostOpacity };
 
   switch (element.type) {
@@ -156,7 +160,7 @@ function ElementMesh({ element, selected, isGhost = false, ghostOpacity = 0.25 }
     case 'furniture':
       return <FurnitureMesh {...meshProps} />;
     case 'space':
-      return <SpaceMesh element={element} selected={isGhost ? false : selected} visible={!isGhost} />;
+      return <SpaceMesh element={element} selected={isGhost ? false : selected} visible={!isGhost && showSpaces} showLabel={showSpaceLabels} />;
     case 'stair':
       return <StairMesh {...meshProps} />;
     default:
