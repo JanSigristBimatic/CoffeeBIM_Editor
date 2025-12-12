@@ -245,23 +245,43 @@ export function getStairTypeLabel(type: StairType): string {
 /**
  * Get the outline for floor opening (in world coordinates)
  * Returns the polygon that should be cut from the top storey's floor
+ *
+ * Calculation: As you walk up the stair, your head gets closer to the ceiling.
+ * The opening must start where the remaining headroom falls below 2.0m.
+ *
+ * At horizontal position X along the stair:
+ * - Your feet are at height: X × (riserHeight / treadDepth)
+ * - Headroom = totalRise - feet_height
+ * - Opening starts when: totalRise - X × slope < requiredHeadroom
+ * - Solving for X: X > (totalRise - requiredHeadroom) / slope
  */
 export function getStairOpeningOutline(stair: BimElement): Point2D[] {
   if (!stair.stairData) return [];
 
-  const { steps, width, rotation } = stair.stairData;
+  const { steps, width, rotation, totalRise } = stair.stairData;
   const { position } = stair.placement;
 
-  // Headroom clearance: opening starts where headroom < 2.0m
-  const headroom = 2.0;
-  const clearanceStep = Math.ceil(headroom / steps.riserHeight);
-  const openingStart = clearanceStep * steps.treadDepth;
+  // Required headroom (DIN 18065: minimum 2.0m)
+  const requiredHeadroom = 2.0;
 
-  // Opening extends to end of stair + small margin
-  const openingEnd = steps.runLength + 0.1;
-  const halfWidth = width / 2 + 0.05; // 5cm margin
+  // Stair slope = rise / run = riserHeight / treadDepth
+  const slope = steps.riserHeight / steps.treadDepth;
 
-  // Local coordinates
+  // Opening starts where: totalRise - X × slope < requiredHeadroom
+  // => X > (totalRise - requiredHeadroom) / slope
+  const openingStartCalc = (totalRise - requiredHeadroom) / slope;
+
+  // Opening must start at least at position 0 (can't be negative)
+  // Add small margin before the calculated point for safety
+  const openingStart = Math.max(0, openingStartCalc - 0.1);
+
+  // Opening extends to end of stair + margin for landing
+  const openingEnd = steps.runLength + 0.3;
+
+  // Width: stair width + margins for handrails/finishing (10cm each side)
+  const halfWidth = width / 2 + 0.1;
+
+  // Local coordinates (relative to stair start point)
   const localOutline: Point2D[] = [
     { x: openingStart, y: -halfWidth },
     { x: openingEnd, y: -halfWidth },

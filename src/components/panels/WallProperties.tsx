@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { BimElement, WallAlignmentSide } from '@/types/bim';
 import { WALL_ALIGNMENT_LABELS } from '@/types/bim';
 import { useElementStore } from '@/store';
@@ -13,6 +14,7 @@ interface WallPropertiesProps {
  * Allows editing wall thickness and height after placement
  */
 export function WallProperties({ element }: WallPropertiesProps) {
+  const { t } = useTranslation();
   const { updateElement } = useElementStore();
 
   const wallData = element.wallData;
@@ -60,7 +62,7 @@ export function WallProperties({ element }: WallPropertiesProps) {
   );
 
   if (!wallData) {
-    return <div className="text-sm text-muted-foreground">Wand-Daten nicht verfügbar</div>;
+    return <div className="text-sm text-muted-foreground">{t('properties.wallDataNotAvailable')}</div>;
   }
 
   // Calculate wall area and volume
@@ -69,11 +71,11 @@ export function WallProperties({ element }: WallPropertiesProps) {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold">Wand-Parameter</h3>
+      <h3 className="text-sm font-semibold">{t('properties.wallParameters')}</h3>
 
       {/* Alignment */}
       <div>
-        <label className="text-xs text-muted-foreground">Referenzkante</label>
+        <label className="text-xs text-muted-foreground">{t('properties.referenceEdge')}</label>
         <select
           value={wallData.alignmentSide}
           onChange={(e) => handleAlignmentChange(e.target.value as WallAlignmentSide)}
@@ -86,14 +88,14 @@ export function WallProperties({ element }: WallPropertiesProps) {
           ))}
         </select>
         <span className="text-xs text-muted-foreground mt-0.5 block">
-          Definiert, welche Kante die gezeichnete Linie repräsentiert
+          {t('properties.referenceEdgeDescription')}
         </span>
       </div>
 
       {/* Dimensions */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-xs text-muted-foreground">Dicke (m)</label>
+          <label className="text-xs text-muted-foreground">{t('properties.thicknessMeters')}</label>
           <input
             type="number"
             value={wallData.thickness}
@@ -105,7 +107,7 @@ export function WallProperties({ element }: WallPropertiesProps) {
           />
         </div>
         <div>
-          <label className="text-xs text-muted-foreground">Höhe (m)</label>
+          <label className="text-xs text-muted-foreground">{t('properties.heightMeters')}</label>
           <input
             type="number"
             value={wallData.height}
@@ -120,7 +122,7 @@ export function WallProperties({ element }: WallPropertiesProps) {
 
       {/* Length (read-only) */}
       <div>
-        <label className="text-xs text-muted-foreground">Länge (m)</label>
+        <label className="text-xs text-muted-foreground">{t('properties.lengthMeters')}</label>
         <input
           type="number"
           value={Number(wallLength.toFixed(3))}
@@ -128,26 +130,26 @@ export function WallProperties({ element }: WallPropertiesProps) {
           className="w-full mt-1 px-2 py-1.5 text-sm border rounded bg-muted"
         />
         <span className="text-xs text-muted-foreground mt-0.5 block">
-          Länge kann durch Verschieben der Endpunkte geändert werden
+          {t('properties.lengthEditHint')}
         </span>
       </div>
 
       {/* Openings count */}
       <div>
-        <label className="text-xs text-muted-foreground">Öffnungen</label>
+        <label className="text-xs text-muted-foreground">{t('properties.openings')}</label>
         <p className="text-sm font-medium">{wallData.openings.length}</p>
       </div>
 
       {/* Start/End Points (read-only info) */}
       <div className="pt-2 border-t text-xs text-muted-foreground">
         <div className="flex justify-between">
-          <span>Startpunkt:</span>
+          <span>{t('properties.startPoint')}:</span>
           <span className="font-mono">
             ({wallData.startPoint.x.toFixed(2)}, {wallData.startPoint.y.toFixed(2)})
           </span>
         </div>
         <div className="flex justify-between mt-1">
-          <span>Endpunkt:</span>
+          <span>{t('properties.endPoint')}:</span>
           <span className="font-mono">
             ({wallData.endPoint.x.toFixed(2)}, {wallData.endPoint.y.toFixed(2)})
           </span>
@@ -157,12 +159,12 @@ export function WallProperties({ element }: WallPropertiesProps) {
       {/* Calculated values */}
       <div className="pt-2 border-t text-xs text-muted-foreground">
         <div className="flex justify-between">
-          <span>Wandfläche:</span>
-          <span className="font-mono">{wallArea.toFixed(2)}m²</span>
+          <span>{t('properties.wallArea')}:</span>
+          <span className="font-mono">{wallArea.toFixed(2)}{t('units.squareMeters')}</span>
         </div>
         <div className="flex justify-between mt-1">
-          <span>Volumen:</span>
-          <span className="font-mono">{wallVolume.toFixed(3)}m³</span>
+          <span>{t('properties.volume')}:</span>
+          <span className="font-mono">{wallVolume.toFixed(3)}{t('units.cubicMeters')}</span>
         </div>
       </div>
     </div>

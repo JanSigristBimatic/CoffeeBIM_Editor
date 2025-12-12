@@ -7,7 +7,7 @@
 
 import { create } from 'zustand';
 import * as YUKA from 'yuka';
-import type { BimElement } from '@/types/bim';
+import type { BimElement, StoreyInfo } from '@/types/bim';
 import {
   calculateEvacuationPath,
   calculatePathLength,
@@ -168,7 +168,8 @@ interface EvacuationActions {
     columns?: BimElement[],
     furniture?: BimElement[],
     counters?: BimElement[],
-    stairs?: BimElement[]
+    stairs?: BimElement[],
+    storeys?: StoreyInfo[]
   ) => void;
   stopSimulation: () => void;
   update: (delta: number) => void;
@@ -243,7 +244,11 @@ function pointToSegmentDistance(
 // Door & Space Helpers
 // ============================================================================
 
-function getDoorPosition(door: BimElement, walls: BimElement[]): Point3D | null {
+function getDoorPosition(
+  door: BimElement,
+  walls: BimElement[],
+  storeys: StoreyInfo[] = []
+): Point3D | null {
   if (!door.doorData) return null;
 
   const hostWall = walls.find(w => w.id === door.doorData?.hostWallId);
@@ -252,10 +257,14 @@ function getDoorPosition(door: BimElement, walls: BimElement[]): Point3D | null 
   const { startPoint, endPoint } = hostWall.wallData;
   const t = door.doorData.positionOnWall;
 
+  // Get storey elevation for correct Z position
+  const storey = storeys.find(s => s.id === hostWall.parentId);
+  const elevation = storey?.elevation ?? hostWall.placement.position.z;
+
   return {
     x: startPoint.x + (endPoint.x - startPoint.x) * t,
     y: startPoint.y + (endPoint.y - startPoint.y) * t,
-    z: hostWall.placement.position.z,
+    z: elevation,
   };
 }
 
@@ -294,7 +303,12 @@ function findConnectedSpaces(
   return { space1: space1Id, space2: space2Id };
 }
 
-function findExitDoors(doors: BimElement[], walls: BimElement[], spaces: BimElement[]): ExitDoor[] {
+function findExitDoors(
+  doors: BimElement[],
+  walls: BimElement[],
+  spaces: BimElement[],
+  storeys: StoreyInfo[] = []
+): ExitDoor[] {
   const exits: ExitDoor[] = [];
 
   for (const door of doors) {
@@ -308,7 +322,7 @@ function findExitDoors(doors: BimElement[], walls: BimElement[], spaces: BimElem
     const isBoundaryDoor = (space1 !== null) !== (space2 !== null);
 
     if (isExternal || isBoundaryDoor) {
-      const doorPos = getDoorPosition(door, walls);
+      const doorPos = getDoorPosition(door, walls, storeys);
       if (doorPos) {
         exits.push({ id: door.id, position: doorPos, doorElement: door });
       }
@@ -420,17 +434,21 @@ function buildRoomGraph(
   doors: BimElement[],
   walls: BimElement[],
   stairs: BimElement[],
-  exitDoors: ExitDoor[]
+  exitDoors: ExitDoor[],
+  storeys: StoreyInfo[] = []
 ): Map<string, RoomNode> {
   const graph = new Map<string, RoomNode>();
   const exitDoorIds = new Set(exitDoors.map(e => e.id));
 
-  // Initialize nodes for all spaces
+  // Initialize nodes for all spaces with correct storey elevation
   for (const space of spaces) {
+    const storey = storeys.find(s => s.id === space.parentId);
+    const elevation = storey?.elevation ?? space.placement.position.z;
+
     graph.set(space.id, {
       spaceId: space.id,
       storeyId: space.parentId || '',
-      elevation: space.placement.position.z,
+      elevation,
       doors: [],
       stairs: [],
     });
@@ -440,7 +458,7 @@ function buildRoomGraph(
   for (const door of doors) {
     if (!door.doorData) continue;
 
-    const doorPos = getDoorPosition(door, walls);
+    const doorPos = getDoorPosition(door, walls, storeys);
     if (!doorPos) continue;
 
     const { space1, space2 } = findConnectedSpaces(door, walls, spaces);
@@ -1278,11 +1296,11 @@ export const useEvacuationStore = create<EvacuationState & EvacuationActions>((s
   agentSpeed: 1.5,
   stats: { ...initialStats },
 
-  startSimulation: (spaces, doors, walls, columns = [], furniture = [], counters = [], stairs = []) => {
+  startSimulation: (spaces, doors, walls, columns = [], furniture = [], counters = [], stairs = [], storeys = []) => {
     const state = get();
     state.reset();
 
-    const exitDoors = findExitDoors(doors, walls, spaces);
+    const exitDoors = findExitDoors(doors, walls, spaces, storeys);
     if (exitDoors.length === 0) {
       console.warn('No exit doors found!');
       return;
@@ -1290,7 +1308,7 @@ export const useEvacuationStore = create<EvacuationState & EvacuationActions>((s
 
     const wallSegments = createWallSegments(walls, doors);
     const stairConnections = findStairConnections(stairs, spaces);
-    const roomGraph = buildRoomGraph(spaces, doors, walls, stairs, exitDoors);
+    const roomGraph = buildRoomGraph(spaces, doors, walls, stairs, exitDoors, storeys);
 
     console.log(`Found ${stairs.length} stairs, ${stairConnections.length} stair connections for multi-storey evacuation`);
 
@@ -1319,6 +1337,10 @@ export const useEvacuationStore = create<EvacuationState & EvacuationActions>((s
         continue;
       }
 
+      // Get storey elevation for correct spawn height
+      const storey = storeys.find(s => s.id === space.parentId);
+      const elevation = storey?.elevation ?? space.placement.position.z;
+
       // Extract exit points (first waypoint positions) for farthest corner calculation
       const exitPointsForSpace = pathToExit.map(wp => ({
         x: wp.position.x,
@@ -1328,7 +1350,7 @@ export const useEvacuationStore = create<EvacuationState & EvacuationActions>((s
       const spawnPoints = generateSpawnPoints(
         space.spaceData.boundaryPolygon,
         state.agentsPerSpace,
-        space.placement.position.z,
+        elevation,
         exitPointsForSpace
       );
 

@@ -1,4 +1,18 @@
 import type { Point2D, Vector3, Quaternion } from './geometry';
+import type { FireSafetyData, CleaningData, CleaningClassification, CleaningFrequency } from './proMode';
+
+// Re-export PRO mode types for external use
+export type { FireSafetyData, CleaningData, CleaningClassification, CleaningFrequency };
+
+// Re-export cleaning calculation functions
+export {
+  calculateCleaningDuration,
+  calculateMonthlyCost,
+  calculateMonthlyTime,
+  CLEANING_PERFORMANCE_RATES,
+  CLEANING_FREQUENCY_PER_MONTH,
+  DEFAULT_CLEANING_HOURLY_RATE,
+} from './proMode';
 
 /**
  * Element types supported by the editor
@@ -307,6 +321,12 @@ export interface WallData {
   openings: Opening[];
   /** Which edge the reference line (startPoint/endPoint) represents */
   alignmentSide: WallAlignmentSide;
+
+  // PRO Mode: Fire Safety
+  /** Fire resistance rating (e.g., REI30, REI60, REI90) */
+  fireRating?: 'REI30' | 'REI60' | 'REI90' | 'REI120' | 'REI180' | 'REI240';
+  /** Whether the wall is combustible */
+  combustible?: boolean;
 }
 
 /**
@@ -337,6 +357,12 @@ export interface DoorData {
   distanceFromRight: number;
   /** Height from floor to bottom of door (default 0 for doors, > 0 for high windows) */
   sillHeight: number;
+
+  // PRO Mode: Fire Safety
+  /** Fire resistance rating (e.g., REI30, REI60, REI90) */
+  fireRating?: 'REI30' | 'REI60' | 'REI90' | 'REI120' | 'REI180' | 'REI240';
+  /** Whether this door is a fire exit / emergency exit */
+  isFireExit?: boolean;
 }
 
 /**
@@ -609,6 +635,14 @@ export interface SpaceData {
 
   /** Gastro-specific room category (stored in IfcSpace.ObjectType) */
   gastroCategory?: GastroSpaceCategory;
+
+  // PRO Mode: Fire Safety
+  /** Fire safety requirements and compliance data */
+  fireSafetyData?: FireSafetyData;
+
+  // PRO Mode: Cleaning & FM
+  /** Cleaning and facility management data */
+  cleaningData?: CleaningData;
 }
 
 /**

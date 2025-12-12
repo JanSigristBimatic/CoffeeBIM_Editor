@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { BimViewerRef } from '../types';
 
-const BimViewer = forwardRef<BimViewerRef, {}>((props, ref) => {
+const BimViewer = forwardRef<BimViewerRef, object>((_props, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);

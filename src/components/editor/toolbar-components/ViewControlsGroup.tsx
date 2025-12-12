@@ -1,10 +1,12 @@
 import { RulerIcon, Columns, Box, Layout, Focus, Eye, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useViewStore } from '@/store';
 import { ToggleButton, ActionButton } from './ToolbarButtons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
 import { cn } from '@/lib/utils';
 
 export function ViewControlsGroup() {
+  const { t } = useTranslation();
   const { toggleGrid, showGrid, snapSettings, toggleSnapOrthogonal, viewMode, cycleViewMode, showDimensions, toggleDimensions, triggerZoomToExtents, showSpaces, toggleSpaces, showSpaceLabels, toggleSpaceLabels } = useViewStore();
 
   // Icon and label based on view mode
@@ -38,16 +40,16 @@ export function ViewControlsGroup() {
         label={getViewLabel()}
         isActive={viewMode === 'split'}
         onClick={cycleViewMode}
-        title="Ansicht wechseln: 2D → 3D → Split (V)"
+        title={t('view.cycleView')}
       />
       <ToggleButton
         icon={<RulerIcon size={20} />}
-        label="Ortho"
+        label={t('view.ortho')}
         isActive={snapSettings.orthogonal}
         onClick={toggleSnapOrthogonal}
-        title="Orthogonal-Modus ein/aus (O)"
+        title={t('view.orthoTooltip')}
       />
-      {/* Anzeige-Dropdown */}
+      {/* Display Dropdown */}
       <Popover>
         <PopoverTrigger asChild>
           <button
@@ -56,10 +58,10 @@ export function ViewControlsGroup() {
               'hover:bg-accent hover:text-accent-foreground',
               (showGrid || showDimensions || showSpaces || showSpaceLabels) && 'bg-accent'
             )}
-            title="Anzeige-Einstellungen"
+            title={t('view.displaySettings')}
           >
             <Eye size={20} />
-            <span className="text-xs mt-1">Anzeige</span>
+            <span className="text-xs mt-1">{t('view.display')}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-48 p-2" align="start">
@@ -71,7 +73,7 @@ export function ViewControlsGroup() {
               <div className={cn('w-4 h-4 flex items-center justify-center', showGrid ? 'text-primary' : 'text-transparent')}>
                 <Check size={14} />
               </div>
-              Raster
+              {t('view.grid')}
             </button>
             <button
               onClick={toggleDimensions}
@@ -80,7 +82,7 @@ export function ViewControlsGroup() {
               <div className={cn('w-4 h-4 flex items-center justify-center', showDimensions ? 'text-primary' : 'text-transparent')}>
                 <Check size={14} />
               </div>
-              Bemaßungen
+              {t('view.dimensions')}
             </button>
             <button
               onClick={toggleSpaces}
@@ -89,7 +91,7 @@ export function ViewControlsGroup() {
               <div className={cn('w-4 h-4 flex items-center justify-center', showSpaces ? 'text-primary' : 'text-transparent')}>
                 <Check size={14} />
               </div>
-              Räume
+              {t('view.spaces')}
             </button>
             <button
               onClick={toggleSpaceLabels}
@@ -98,14 +100,14 @@ export function ViewControlsGroup() {
               <div className={cn('w-4 h-4 flex items-center justify-center', showSpaceLabels ? 'text-primary' : 'text-transparent')}>
                 <Check size={14} />
               </div>
-              Raumbeschriftungen
+              {t('view.spaceLabels')}
             </button>
           </div>
         </PopoverContent>
       </Popover>
       <ActionButton
         icon={<Focus size={20} />}
-        label="Zoom"
+        label={t('view.zoom')}
         onClick={triggerZoomToExtents}
         shortcut="Shift+Z"
       />

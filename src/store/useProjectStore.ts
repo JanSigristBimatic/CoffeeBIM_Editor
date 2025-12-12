@@ -174,6 +174,29 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
     {
       name: 'coffeebim-project',
       storage: createIndexedDBStorage<ProjectState>(),
+      // Explizites Merge um sicherzustellen dass persistierte Daten übernommen werden
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as ProjectState | undefined;
+        console.log('[CoffeeBIM] Projekt merge - persisted:', persisted);
+
+        if (!persisted) {
+          console.log('[CoffeeBIM] Keine gespeicherten Projektdaten, nutze Default');
+          return currentState;
+        }
+
+        // Persisted State komplett übernehmen, nur Actions behalten
+        console.log('[CoffeeBIM] Lade gespeichertes Projekt:', persisted.project?.name);
+        console.log('[CoffeeBIM] Storeys:', persisted.storeys?.length);
+
+        return {
+          ...currentState,
+          project: persisted.project ?? currentState.project,
+          site: persisted.site ?? currentState.site,
+          building: persisted.building ?? currentState.building,
+          storeys: persisted.storeys ?? currentState.storeys,
+          activeStoreyId: persisted.activeStoreyId ?? currentState.activeStoreyId,
+        };
+      },
       onRehydrateStorage: () => {
         console.log('[CoffeeBIM] Starte Projekt-Hydration...');
         return (state, error) => {
@@ -181,6 +204,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
             console.error('[CoffeeBIM] Projekt-Hydration Fehler:', error);
           } else {
             console.log('[CoffeeBIM] Projekt-Hydration fertig, activeStoreyId:', state?.activeStoreyId);
+            console.log('[CoffeeBIM] Storeys nach Hydration:', state?.storeys?.length);
           }
           // Markiere Project-Store als hydriert (auch bei Fehler, um nicht zu blockieren)
           setProjectHydrated();

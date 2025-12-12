@@ -6,9 +6,11 @@
 
 import { useState } from 'react';
 import { Users, Play, Square, RotateCcw, Settings } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ActionButton } from './ToolbarButtons';
 import { useEvacuationStore } from '@/store/useEvacuationStore';
 import { useElementStore } from '@/store/useElementStore';
+import { useProjectStore } from '@/store/useProjectStore';
 import {
   Popover,
   PopoverContent,
@@ -16,6 +18,7 @@ import {
 } from '@/components/ui/Popover';
 
 export function EvacuationGroup() {
+  const { t } = useTranslation();
   const [showSettings, setShowSettings] = useState(false);
 
   const {
@@ -31,6 +34,7 @@ export function EvacuationGroup() {
   } = useEvacuationStore();
 
   const { getElementsByType } = useElementStore();
+  const { storeys } = useProjectStore();
 
   const handleStart = () => {
     const spaces = getElementsByType('space');
@@ -42,16 +46,16 @@ export function EvacuationGroup() {
     const stairs = getElementsByType('stair');
 
     if (spaces.length === 0) {
-      alert('Keine Räume gefunden! Erstellen Sie zuerst Räume (Spaces) für die Simulation.');
+      alert(t('evacuation.noSpacesAlert'));
       return;
     }
 
     if (doors.length === 0) {
-      alert('Keine Türen gefunden! Erstellen Sie zuerst Türen als Ausgänge.');
+      alert(t('evacuation.noDoorsAlert'));
       return;
     }
 
-    startSimulation(spaces, doors, walls, columns, furniture, counters, stairs);
+    startSimulation(spaces, doors, walls, columns, furniture, counters, stairs, storeys);
   };
 
   return (
@@ -60,21 +64,21 @@ export function EvacuationGroup() {
       {!isRunning ? (
         <ActionButton
           icon={<Play size={20} className="text-green-500" />}
-          label="Flucht starten"
+          label={t('evacuation.startSimulation')}
           shortcut="F9"
           onClick={handleStart}
         />
       ) : (
         <ActionButton
           icon={<Square size={20} className="text-yellow-500" />}
-          label="Stoppen"
+          label={t('evacuation.stopSimulation')}
           onClick={stopSimulation}
         />
       )}
 
       <ActionButton
         icon={<RotateCcw size={20} />}
-        label="Reset"
+        label={t('evacuation.reset')}
         onClick={reset}
         disabled={stats.totalAgents === 0}
       />
@@ -84,7 +88,7 @@ export function EvacuationGroup() {
         <PopoverTrigger asChild>
           <button
             className="p-2 rounded hover:bg-accent transition-colors"
-            title="Einstellungen"
+            title={t('evacuation.settings')}
           >
             <Settings size={20} />
           </button>
@@ -93,13 +97,13 @@ export function EvacuationGroup() {
           <div className="flex flex-col gap-3">
             <div className="font-semibold text-sm flex items-center gap-2">
               <Users size={16} />
-              Fluchtsimulation
+              {t('evacuation.title')}
             </div>
 
             {/* Agents per space */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground">
-                Personen pro Raum
+                {t('evacuation.agentsPerSpace')}
               </label>
               <input
                 type="range"
@@ -116,7 +120,7 @@ export function EvacuationGroup() {
             {/* Agent speed */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground">
-                Gehgeschwindigkeit (m/s)
+                {t('evacuation.walkingSpeed')}
               </label>
               <input
                 type="range"
@@ -134,19 +138,19 @@ export function EvacuationGroup() {
             {/* Stats */}
             {stats.totalAgents > 0 && (
               <div className="border-t pt-2 mt-2">
-                <div className="text-xs font-medium mb-1">Statistik</div>
+                <div className="text-xs font-medium mb-1">{t('evacuation.statistics')}</div>
                 <div className="text-xs text-muted-foreground space-y-0.5">
                   <div className="flex justify-between">
-                    <span>Evakuiert:</span>
+                    <span>{t('evacuation.evacuated')}</span>
                     <span>{stats.exitedAgents} / {stats.totalAgents}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Zeit:</span>
+                    <span>{t('evacuation.time')}</span>
                     <span>{stats.elapsedTime.toFixed(1)}s</span>
                   </div>
                   {stats.exitedAgents > 0 && stats.totalAgents > 0 && (
                     <div className="flex justify-between">
-                      <span>Fortschritt:</span>
+                      <span>{t('evacuation.progress')}</span>
                       <span>{((stats.exitedAgents / stats.totalAgents) * 100).toFixed(0)}%</span>
                     </div>
                   )}
@@ -156,14 +160,8 @@ export function EvacuationGroup() {
 
             {/* Info */}
             <div className="border-t pt-2 mt-1 text-xs text-muted-foreground">
-              <p>
-                Die Simulation spawnt Personen in allen Räumen und navigiert sie
-                zum nächsten Ausgang (externe Tür).
-              </p>
-              <p className="mt-1">
-                <strong>Tipp:</strong> Markieren Sie Türen als "Extern" im
-                Property-Panel für präzise Ausgangserkennung.
-              </p>
+              <p>{t('evacuation.infoText')}</p>
+              <p className="mt-1">{t('evacuation.tipText')}</p>
             </div>
           </div>
         </PopoverContent>

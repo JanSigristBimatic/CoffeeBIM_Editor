@@ -11,3 +11,4 @@ export { useEvacuationStore } from './useEvacuationStore';
 export type { EvacuationAgent, ExitDoor } from './useEvacuationStore';
 export { useSettingsStore } from './useSettingsStore';
 export type { VisualizationStyle, ImageResolution } from './useSettingsStore';
+export { useProModeStore } from './useProModeStore';

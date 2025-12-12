@@ -466,62 +466,169 @@ docs: update feature roadmap
 
 ---
 
-## Claude Code Skills
+## Claude Code Agents & Skills
 
-Claude Code hat Zugriff auf spezialisierte Skills, die bei bestimmten Aufgaben automatisch aktiviert werden sollen.
+### AGENTS (Task Tool)
 
-### Relevante Skills für dieses Projekt
+#### Kern-Agents (6 Stück - decken 90% der Fälle)
 
-| Skill | Wann nutzen |
+| Agent | Wann nutzen | Beispiel |
+|-------|-------------|----------|
+| **Explore** | Codebase durchsuchen | "Wo werden Errors behandelt?" |
+| **docs-researcher** | VOR Impl. mit Libraries | "Recherchiere React Query v5" |
+| **implementation-planner** | Nach Research, Plan erstellen | "Erstelle Plan mit Rollback" |
+| **code-implementer** | Nach Plan, Code schreiben | "Implementiere den Plan" |
+| **brahma-investigator** | Bugs mit unklarer Ursache | "Warum crashed die App?" |
+| **chief-architect** | Komplexe Multi-Domain-Tasks | "Baue Feature mit API + UI" |
+
+#### Weitere Agents
+
+| Agent | Wann nutzen |
 |-------|-------------|
-| **CleanCode** | **IMMER** beim Schreiben/Refactoring von Code – SOLID, DRY, KISS, YAGNI automatisch anwenden |
-| **planning-methodology** | Bei größeren Features (z.B. neues Tool, IFC-Export-Logik), vor Implementierung Plan erstellen |
-| **research-methodology** | Bei Recherche zu `web-ifc`, IFC-Standards, `three.js`-Patterns – autoritative Quellen nutzen |
-| **quality-validation** | Vor Implementierung: Plans validieren, nach Implementierung: Code-Qualität prüfen |
-| **pattern-recognition** | Nach erfolgreicher Implementierung: Wiederverwendbare Patterns dokumentieren |
-| **context-engineering** | Bei umfangreichen Tasks: Context optimieren, Token-Verbrauch reduzieren |
+| **brahma-analyzer** | Plan vs. Specs validieren (VOR Impl.) |
+| **brahma-deployer** | CI/CD, Production Releases |
+| **brahma-monitor** | Logging, Metrics, Alerts einrichten |
+| **brahma-optimizer** | Performance, Scaling, Caching |
+| **claude-code-guide** | Fragen zu Claude Code Features |
 
-### Trigger-Szenarien
+#### Nicht separat nutzen
+
+| Agent | Stattdessen |
+|-------|-------------|
+| Plan | implementation-planner |
+| general-purpose | Spezifischen Agent |
+
+---
+
+### SKILLS (Skill Tool)
+
+#### Entwicklungs-Skills
+
+| Skill | Funktion |
+|-------|----------|
+| **CleanCode** | SOLID, DRY, KISS, YAGNI (automatisch aktiv) |
+| **planning-methodology** | Strukturierte Feature-Planung |
+| **research-methodology** | Autoritative Dokumentations-Recherche |
+| **quality-validation** | Plans/Code validieren |
+| **pattern-recognition** | Patterns nach Impl. dokumentieren |
+| **context-engineering** | Context/Token optimieren |
+
+#### Spezial-Skills
+
+| Skill | Funktion |
+|-------|----------|
+| **animejs-animation-expert** | Web-Animationen mit Anime.js |
+| **i18n-nextjs-skill** | Internationalisierung (Next.js) |
+| **skill-creator** | Neue Skills erstellen |
+| **web-application-pentest** | Security Testing, OWASP |
+
+---
+
+### SLASH COMMANDS
+
+| Command | Macht was |
+|---------|-----------|
+| `/research [Topic]` | Docs recherchieren → ResearchPack |
+| `/plan` | Implementierungsplan mit Rollback |
+| `/implement` | Code mit Self-Correction (3 Retries) |
+| `/workflow [Task]` | Research → Plan → Implement (alles) |
+| `/context` | Context analysieren/optimieren |
+
+---
+
+### WORKFLOWS
+
+#### Standard (80% der Fälle)
 
 ```
-"Implementiere das Theken-Tool"
-→ planning-methodology (Plan erstellen)
-→ research-methodology (web-ifc Geometrie recherchieren)
-→ CleanCode (beim Implementieren)
-→ pattern-recognition (nach Erfolg dokumentieren)
-
-"Refactore die IFC-Export-Logik"
-→ CleanCode (automatisch aktiv)
-→ quality-validation (nach Refactoring prüfen)
-
-"Recherchiere wie IfcSpace in web-ifc erstellt wird"
-→ research-methodology (autoritative Docs finden)
-
-"Erstelle einen Plan für die Raumerkennung"
-→ planning-methodology (strukturierter Plan)
-→ quality-validation (Plan validieren)
+1. Explore          → Codebase verstehen
+2. /research        → Library-Docs holen
+3. /plan            → Implementierungsplan
+4. /implement       → Code schreiben
 ```
 
-### Weitere verfügbare Skills (projektunabhängig)
+**Shortcut:** `/workflow [Task]` macht 2-4 automatisch
 
-| Skill | Beschreibung | Trigger |
-|-------|--------------|---------|
-| **animejs-animation-expert** | Web-Animationen mit Anime.js V4 | UI-Animationen, Hover-Effekte |
-| **i18n-nextjs-skill** | Internationalisierung Next.js | Mehrsprachigkeit (nicht relevant für Vite) |
-| **skill-creator** | Neue Skills erstellen | "Erstelle einen neuen Skill für..." |
-| **web-application-pentest** | Sicherheitstests | Security-Audits, Penetration Testing |
+#### Bug-Fix
 
-### Slash Commands
+```
+1. brahma-investigator → Root Cause
+2. /plan               → Fix-Strategie
+3. /implement          → Fix umsetzen
+```
 
-Zusätzlich zu Skills stehen folgende Slash-Commands zur Verfügung:
+#### Deployment
 
-| Command | Beschreibung |
-|---------|--------------|
-| `/research` | Schnelle Dokumentations-Recherche mit ResearchPack |
-| `/plan` | Implementierungsplan mit Rollback-Prozeduren erstellen |
-| `/implement` | Code implementieren mit Self-Correction (bis 3 Retries) |
-| `/workflow` | Kompletter Research → Plan → Implement Workflow |
-| `/context` | Context analysieren und optimieren |
+```
+1. brahma-analyzer  → Pre-Deploy Check
+2. brahma-deployer  → Canary Deployment
+3. brahma-monitor   → Post-Deploy Monitoring
+```
+
+---
+
+### ENTSCHEIDUNGSBAUM
+
+```
+Was willst du tun?
+│
+├─► Code suchen/verstehen → Explore
+├─► Library-Docs → /research
+├─► Feature implementieren
+│   ├─► Einfach → Direkt
+│   ├─► Mittel → /research → /plan → /implement
+│   └─► Komplex → /workflow
+├─► Bug fixen
+│   ├─► Klar → Direkt
+│   └─► Unklar → brahma-investigator
+├─► Plan validieren → brahma-analyzer
+├─► Deployen → brahma-deployer
+├─► Performance → brahma-optimizer
+└─► Monitoring → brahma-monitor
+```
+
+---
+
+### BEST PRACTICES
+
+**DO:**
+- `/research` vor unbekannten Libraries
+- Explore mit "very thorough" bei Unsicherheit
+- `/workflow` für Multi-File-Tasks
+- brahma-analyzer VOR Implementierung
+
+**DON'T:**
+- `general-purpose` nutzen
+- `Plan` statt `implementation-planner`
+- Implementieren ohne Research
+
+---
+
+### Für CoffeeBIM relevante Tools
+
+| Situation | Tool | Beispiel |
+|-----------|------|----------|
+| web-ifc API | /research | "Recherchiere web-ifc IfcWall" |
+| Three.js Rendering | /research | "Recherchiere @react-three/fiber" |
+| Geometrie-Bug | brahma-investigator | "Debug IFC-Export Fehler" |
+| Neues BIM-Tool | /workflow | "Implementiere Fenster-Tool" |
+
+### Typische Workflows für CoffeeBIM
+
+**Neues BIM-Element:**
+```
+/research web-ifc [ElementTyp] → /plan → /implement
+```
+
+**IFC-Export Bug:**
+```
+brahma-investigator → /plan → /implement
+```
+
+**Performance-Problem:**
+```
+brahma-monitor → brahma-optimizer → /implement
+```
 
 ---
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Trash2, Settings, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useSelectionStore, useElementStore, useProjectStore, useSettingsStore } from '@/store';
 import { exportToIfc } from '@/bim/ifc';
 import { clearDatabase } from '@/lib/storage/indexedDBStorage';
@@ -16,11 +17,13 @@ import {
   EditActionsGroup,
   SpaceActionsGroup,
   ImportExportGroup,
-  EvacuationGroup,
   ActionButton,
 } from './toolbar-components';
+import { ProModeGroup } from './toolbar-components/ProModeGroup';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
 export function Toolbar() {
+  const { t } = useTranslation();
   const { getSelectedIds } = useSelectionStore();
   const { getAllElements } = useElementStore();
   const { project, site, building, storeys } = useProjectStore();
@@ -48,21 +51,19 @@ export function Toolbar() {
       await exportToIfc(project, site, building, storeys, elements);
     } catch (error) {
       console.error('IFC Export failed:', error);
-      alert('IFC Export fehlgeschlagen. Bitte prufen Sie die Konsole fur Details.');
+      alert(t('dialogs.exportFailed'));
     } finally {
       setIsExporting(false);
     }
-  }, [isExporting, getAllElements, project, site, building, storeys]);
+  }, [isExporting, getAllElements, project, site, building, storeys, t]);
 
   const handleClearProject = useCallback(async () => {
-    const confirmed = window.confirm(
-      'Möchten Sie das Projekt wirklich löschen?\n\nAlle Daten werden unwiderruflich gelöscht und die Seite wird neu geladen.'
-    );
+    const confirmed = window.confirm(t('dialogs.confirmDelete'));
     if (confirmed) {
       await clearDatabase();
       window.location.reload();
     }
-  }, []);
+  }, [t]);
 
   // Keyboard shortcuts for import/export
   useEffect(() => {
@@ -97,51 +98,55 @@ export function Toolbar() {
   }, [isExporting, handleExport]);
 
   return (
-    <div className="flex items-center gap-1 p-2 bg-background border-b">
-      <ToolSelectionGroup />
-      <ViewControlsGroup />
-      <SnapControlsGroup />
-      <PdfUnderlayGroup onOpenPdfDialog={() => setShowPdfDialog(true)} />
-      <EditActionsGroup />
-      <SpaceActionsGroup />
-      <EvacuationGroup />
-      <ImportExportGroup
-        isExporting={isExporting}
-        onExport={handleExport}
-        onOpenImportDialog={() => setShowImportDialog(true)}
-        onOpenIfcImportDialog={() => setShowIfcImportDialog(true)}
-      />
+    <div className="flex items-center gap-1 p-2 bg-background border-b overflow-x-auto scrollbar-hide">
+      {/* Tool groups - scrollable on mobile */}
+      <div className="flex items-center gap-1 shrink-0">
+        <ToolSelectionGroup />
+        <ViewControlsGroup />
+        <SnapControlsGroup />
+        <PdfUnderlayGroup onOpenPdfDialog={() => setShowPdfDialog(true)} />
+        <EditActionsGroup />
+        <SpaceActionsGroup />
+        <ProModeGroup />
+        <ImportExportGroup
+          isExporting={isExporting}
+          onExport={handleExport}
+          onOpenImportDialog={() => setShowImportDialog(true)}
+          onOpenIfcImportDialog={() => setShowIfcImportDialog(true)}
+        />
+      </div>
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      {/* Spacer - hidden on small screens */}
+      <div className="flex-1 hidden md:block" />
 
-      {/* Selection Info */}
+      {/* Selection Info - hidden on small screens */}
       {hasSelection && (
-        <div className="text-sm text-muted-foreground">
-          {selectedIds.length} Element{selectedIds.length > 1 ? 'e' : ''} ausgewahlt
+        <div className="text-sm text-muted-foreground hidden lg:block shrink-0">
+          {t('messages.multipleSelected', { count: selectedIds.length })}
         </div>
       )}
 
       {/* AI & Settings */}
-      <div className="flex items-center gap-1 border-l pl-2 ml-2">
+      <div className="flex items-center gap-1 border-l pl-2 ml-2 shrink-0">
         <ActionButton
           icon={<Sparkles size={20} className={canVisualize ? 'text-purple-500' : 'text-muted-foreground'} />}
-          label="AI Visualisierung"
+          label={t('toolbar.visualize')}
           onClick={() => setShowVisualizationDialog(true)}
           disabled={!canVisualize}
         />
         <ActionButton
           icon={<Settings size={20} />}
-          label="Einstellungen"
+          label={t('toolbar.settings')}
           onClick={() => setShowSettingsDialog(true)}
         />
+        <LanguageSwitcher />
       </div>
 
       {/* Project Actions */}
-      <div className="flex items-center gap-1 border-l pl-2 ml-2">
+      <div className="flex items-center gap-1 border-l pl-2 ml-2 shrink-0">
         <ActionButton
           icon={<Trash2 size={20} className="text-destructive" />}
-          label="Löschen"
+          label={t('toolbar.clearProject')}
           onClick={handleClearProject}
         />
       </div>

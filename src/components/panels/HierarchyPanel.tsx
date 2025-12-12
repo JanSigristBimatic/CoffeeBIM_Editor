@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Building2, Layers, Box, Plus, Trash2, MapPin, LayoutGrid, DoorOpen, Columns, Square, Armchair, Pencil, Eye, EyeOff, ArrowUp, ArrowDown } from 'lucide-react';
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useProjectStore, useElementStore, useSelectionStore, useViewStore } from '@/store';
 import { cn } from '@/lib/utils';
 import type { BimElement } from '@/types/bim';
@@ -20,6 +21,7 @@ interface EditableElevationProps {
 }
 
 function EditableElevation({ value, onSave }: EditableElevationProps) {
+  const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value.toString());
   const inputRef = useRef<HTMLInputElement>(null);
@@ -73,7 +75,7 @@ function EditableElevation({ value, onSave }: EditableElevationProps) {
     <span
       className="cursor-pointer hover:underline text-xs text-muted-foreground"
       onDoubleClick={() => setIsEditing(true)}
-      title="Doppelklick zum Bearbeiten der Elevation"
+      title={t('hierarchy.doubleClickToEditElevation')}
     >
       +{value}m
     </span>
@@ -81,6 +83,7 @@ function EditableElevation({ value, onSave }: EditableElevationProps) {
 }
 
 function EditableName({ value, onSave, className }: EditableNameProps) {
+  const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -129,7 +132,7 @@ function EditableName({ value, onSave, className }: EditableNameProps) {
     <span
       className={cn('cursor-pointer hover:underline group/name', className)}
       onDoubleClick={() => setIsEditing(true)}
-      title="Doppelklick zum Bearbeiten"
+      title={t('hierarchy.doubleClickToEdit')}
     >
       {value}
       <Pencil
@@ -141,6 +144,7 @@ function EditableName({ value, onSave, className }: EditableNameProps) {
 }
 
 export function HierarchyPanel() {
+  const { t } = useTranslation();
   const {
     project, site, building, storeys, activeStoreyId,
     setActiveStorey, addStorey, removeStorey, updateStorey,
@@ -199,10 +203,10 @@ export function HierarchyPanel() {
   const handleDeleteStorey = (storeyId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (storeys.length <= 1) {
-      alert('Mindestens ein Stockwerk muss vorhanden sein.');
+      alert(t('hierarchy.atLeastOneStoreyRequired'));
       return;
     }
-    if (confirm('Stockwerk und alle zugehörigen Elemente löschen?')) {
+    if (confirm(t('hierarchy.confirmDeleteStorey'))) {
       removeStorey(storeyId);
     }
   };
@@ -214,7 +218,7 @@ export function HierarchyPanel() {
 
   return (
     <div className="p-4">
-      <h2 className="text-lg font-semibold mb-4">Projektstruktur</h2>
+      <h2 className="text-lg font-semibold mb-4">{t('hierarchy.projectStructure')}</h2>
 
       <div className="space-y-1 text-sm">
         {/* Project */}
@@ -281,7 +285,7 @@ export function HierarchyPanel() {
                 <button
                   onClick={(e) => handleDeleteStorey(storey.id, e)}
                   className="p-0.5 hover:bg-destructive hover:text-destructive-foreground rounded opacity-0 group-hover:opacity-100 transition-opacity ml-1"
-                  title="Stockwerk löschen"
+                  title={t('hierarchy.deleteStorey')}
                 >
                   <Trash2 size={12} />
                 </button>
@@ -291,7 +295,7 @@ export function HierarchyPanel() {
               {isExpanded && (
                 <div className="pl-20 space-y-0.5">
                   {elements.length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-1">Keine Elemente</p>
+                    <p className="text-xs text-muted-foreground py-1">{t('hierarchy.noElements')}</p>
                   ) : (
                     elements.map((element) => (
                       <ElementItem
@@ -311,7 +315,7 @@ export function HierarchyPanel() {
 
         {/* Ghost Storey Visibility Controls */}
         <div className="pl-12 pt-3 pb-2 border-t border-border/50 mt-2">
-          <p className="text-xs font-medium text-muted-foreground mb-2">Geschoss-Anzeige</p>
+          <p className="text-xs font-medium text-muted-foreground mb-2">{t('hierarchy.storeyDisplay')}</p>
           <div className="space-y-1">
             {/* Show storey above toggle */}
             <button
@@ -325,12 +329,12 @@ export function HierarchyPanel() {
                     : 'hover:bg-accent text-muted-foreground'
                   : 'opacity-50 cursor-not-allowed text-muted-foreground'
               )}
-              title={adjacentStoreys.above ? `${adjacentStoreys.above.name} einblenden` : 'Kein Geschoss darüber'}
+              title={adjacentStoreys.above ? t('hierarchy.showStorey', { name: adjacentStoreys.above.name }) : t('hierarchy.noStoreyAbove')}
             >
               <ArrowUp size={14} />
               {showStoreyAbove ? <Eye size={14} /> : <EyeOff size={14} />}
               <span className="truncate">
-                {adjacentStoreys.above ? adjacentStoreys.above.name : 'Kein Geschoss darüber'}
+                {adjacentStoreys.above ? adjacentStoreys.above.name : t('hierarchy.noStoreyAbove')}
               </span>
             </button>
 
@@ -346,12 +350,12 @@ export function HierarchyPanel() {
                     : 'hover:bg-accent text-muted-foreground'
                   : 'opacity-50 cursor-not-allowed text-muted-foreground'
               )}
-              title={adjacentStoreys.below ? `${adjacentStoreys.below.name} einblenden` : 'Kein Geschoss darunter'}
+              title={adjacentStoreys.below ? t('hierarchy.showStorey', { name: adjacentStoreys.below.name }) : t('hierarchy.noStoreyBelow')}
             >
               <ArrowDown size={14} />
               {showStoreyBelow ? <Eye size={14} /> : <EyeOff size={14} />}
               <span className="truncate">
-                {adjacentStoreys.below ? adjacentStoreys.below.name : 'Kein Geschoss darunter'}
+                {adjacentStoreys.below ? adjacentStoreys.below.name : t('hierarchy.noStoreyBelow')}
               </span>
             </button>
           </div>
@@ -369,14 +373,14 @@ export function HierarchyPanel() {
                   if (e.key === 'Enter') handleAddStorey();
                   if (e.key === 'Escape') setIsAddingStorey(false);
                 }}
-                placeholder="Stockwerk-Name"
+                placeholder={t('hierarchy.storeyNamePlaceholder')}
                 className="flex-1 px-2 py-1 text-xs border rounded bg-background"
                 autoFocus
               />
               <button
                 onClick={handleAddStorey}
                 className="p-1 hover:bg-accent rounded text-primary"
-                title="Hinzufügen"
+                title={t('hierarchy.add')}
               >
                 <Plus size={14} />
               </button>
@@ -387,7 +391,7 @@ export function HierarchyPanel() {
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
               <Plus size={12} />
-              <span>Stockwerk hinzufügen</span>
+              <span>{t('hierarchy.addStorey')}</span>
             </button>
           )}
         </div>

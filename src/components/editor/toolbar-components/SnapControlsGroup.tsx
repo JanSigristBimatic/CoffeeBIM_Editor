@@ -8,6 +8,7 @@ import {
   X,
   Grid2X2,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useViewStore } from '@/store';
 import { cn } from '@/lib/utils';
 
@@ -37,6 +38,7 @@ function SnapOptionButton({ icon, label, isActive, onClick, iconColor }: SnapOpt
 }
 
 export function SnapControlsGroup() {
+  const { t } = useTranslation();
   const {
     snapSettings,
     toggleSnapEndpoint,
@@ -58,10 +60,10 @@ export function SnapControlsGroup() {
           'hover:bg-accent hover:text-accent-foreground',
           snapSettings.enabled && 'bg-primary text-primary-foreground'
         )}
-        title="Fangen ein/aus"
+        title={t('snap.toggle')}
       >
         <Magnet size={20} />
-        <span className="text-xs mt-1">Fangen</span>
+        <span className="text-xs mt-1">{t('snap.snap')}</span>
       </button>
       <button
         onClick={() => setShowSnapMenu(!showSnapMenu)}
@@ -70,19 +72,19 @@ export function SnapControlsGroup() {
           'hover:bg-accent hover:text-accent-foreground',
           showSnapMenu && 'bg-accent'
         )}
-        title="Fang-Optionen"
+        title={t('snap.optionsTooltip')}
       >
         <Crosshair size={20} />
-        <span className="text-xs mt-1">Optionen</span>
+        <span className="text-xs mt-1">{t('snap.options')}</span>
       </button>
 
       {showSnapMenu && (
         <div className="absolute top-full left-0 mt-1 p-2 bg-popover border rounded-md shadow-lg z-50 min-w-[180px]">
-          <div className="text-xs font-medium mb-2 text-muted-foreground">Fang-Optionen</div>
+          <div className="text-xs font-medium mb-2 text-muted-foreground">{t('snap.snapOptions')}</div>
 
           <SnapOptionButton
             icon={<Square size={16} />}
-            label="Eckpunkte"
+            label={t('snap.endpoint')}
             isActive={snapSettings.endpoint}
             onClick={toggleSnapEndpoint}
             iconColor="text-green-500"
@@ -90,7 +92,7 @@ export function SnapControlsGroup() {
 
           <SnapOptionButton
             icon={<Triangle size={16} />}
-            label="Mittelpunkt"
+            label={t('snap.midpoint')}
             isActive={snapSettings.midpoint}
             onClick={toggleSnapMidpoint}
             iconColor="text-orange-500"
@@ -98,7 +100,7 @@ export function SnapControlsGroup() {
 
           <SnapOptionButton
             icon={<CornerDownRight size={16} />}
-            label="Lotrecht"
+            label={t('snap.perpendicular')}
             isActive={snapSettings.perpendicular}
             onClick={toggleSnapPerpendicular}
             iconColor="text-blue-500"
@@ -106,7 +108,7 @@ export function SnapControlsGroup() {
 
           <SnapOptionButton
             icon={<X size={16} />}
-            label="Auf Linie"
+            label={t('snap.nearest')}
             isActive={snapSettings.nearest}
             onClick={toggleSnapNearest}
             iconColor="text-fuchsia-500"
@@ -114,7 +116,7 @@ export function SnapControlsGroup() {
 
           <SnapOptionButton
             icon={<Grid2X2 size={16} />}
-            label="Raster"
+            label={t('snap.grid')}
             isActive={snapSettings.grid}
             onClick={toggleSnapGrid}
             iconColor="text-gray-500"

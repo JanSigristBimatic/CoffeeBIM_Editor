@@ -1,8 +1,10 @@
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, MapControls, GizmoHelper, GizmoViewport, Environment } from '@react-three/drei';
-import { Suspense, useRef, useState, useEffect } from 'react';
+import { Suspense, useRef, useState, useEffect, useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
+import { getOptimalDpr } from '@/hooks';
 import { Grid } from './Grid';
 import { SceneElements } from './SceneElements';
 import { GroundPlane } from './GroundPlane';
@@ -54,6 +56,14 @@ export function Canvas3D() {
 
   const is2D = viewMode === '2d';
 
+  // Mobile optimization: Calculate optimal DPR once
+  const dpr = useMemo(() => getOptimalDpr(), []);
+
+  // Detect if touch device for conditional settings
+  const isTouchDevice = useMemo(() => {
+    return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  }, []);
+
   // Disable orbit controls when placing elements or dragging
   const isPlacingElement = activeTool === 'wall' || activeTool === 'door' || activeTool === 'window' || activeTool === 'column' || activeTool === 'slab' || activeTool === 'counter' || activeTool === 'asset' || activeTool === 'space-detect' || activeTool === 'space-draw' || activeTool === 'stair' || activeTool === 'measure';
   const shouldDisableOrbit = isPlacingElement || isDragging;
@@ -82,8 +92,13 @@ export function Canvas3D() {
         up: [0, 0, 1], // Z-up coordinate system (BIM/IFC standard)
       }}
       shadows={!is2D}
+      dpr={dpr} // Mobile optimization: Use optimal DPR
       onPointerMissed={handlePointerMissed}
-      gl={{ preserveDrawingBuffer: true }} // Required for screenshots
+      gl={{
+        preserveDrawingBuffer: true, // Required for screenshots
+        powerPreference: 'high-performance',
+        antialias: !isTouchDevice, // Disable antialiasing on mobile for performance
+      }}
     >
       <Suspense fallback={null}>
         {/* 2D Camera positioning */}
@@ -97,7 +112,7 @@ export function Canvas3D() {
               position={[10, 10, 20]}
               intensity={1}
               castShadow
-              shadow-mapSize={[2048, 2048]}
+              shadow-mapSize={isTouchDevice ? [1024, 1024] : [2048, 2048]} // Reduced shadow quality on mobile
               shadow-camera-far={50}
               shadow-camera-left={-20}
               shadow-camera-right={20}
@@ -162,7 +177,7 @@ export function Canvas3D() {
           onDragEnd={() => setIsDragging(false)}
         />
 
-        {/* Camera Controls - different for 2D/3D */}
+        {/* Camera Controls - different for 2D/3D, with touch support */}
         {is2D ? (
           <MapControls
             ref={controlsRef}
@@ -174,6 +189,11 @@ export function Canvas3D() {
             maxZoom={500}
             screenSpacePanning
             enabled={!shouldDisableOrbit}
+            // Touch support: one finger pan, two finger zoom
+            touches={{
+              ONE: THREE.TOUCH.PAN,
+              TWO: THREE.TOUCH.DOLLY_PAN,
+            }}
           />
         ) : (
           <OrbitControls
@@ -186,6 +206,11 @@ export function Canvas3D() {
             minDistance={1}
             maxDistance={100}
             enabled={!shouldDisableOrbit}
+            // Touch support: one finger rotate, two finger zoom/pan
+            touches={{
+              ONE: THREE.TOUCH.ROTATE,
+              TWO: THREE.TOUCH.DOLLY_PAN,
+            }}
           />
         )}
 

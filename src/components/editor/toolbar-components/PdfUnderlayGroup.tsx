@@ -1,4 +1,5 @@
 import { FileImage, Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { usePdfUnderlayStore } from '@/store';
 import { cn } from '@/lib/utils';
 
@@ -7,6 +8,7 @@ interface PdfUnderlayGroupProps {
 }
 
 export function PdfUnderlayGroup({ onOpenPdfDialog }: PdfUnderlayGroupProps) {
+  const { t } = useTranslation();
   const { isLoaded: hasPdf, isVisible: pdfVisible, toggleVisible: togglePdfVisible } = usePdfUnderlayStore();
 
   return (
@@ -18,7 +20,7 @@ export function PdfUnderlayGroup({ onOpenPdfDialog }: PdfUnderlayGroupProps) {
           'hover:bg-accent hover:text-accent-foreground',
           hasPdf && 'bg-accent'
         )}
-        title="PDF Grundriss laden (P)"
+        title={t('pdf.loadPdf')}
       >
         <FileImage size={20} />
         <span className="text-xs mt-1">PDF</span>
@@ -31,10 +33,10 @@ export function PdfUnderlayGroup({ onOpenPdfDialog }: PdfUnderlayGroupProps) {
             'hover:bg-accent hover:text-accent-foreground',
             pdfVisible && 'bg-accent'
           )}
-          title="PDF ein/aus"
+          title={t('pdf.togglePdf')}
         >
           {pdfVisible ? <Eye size={20} /> : <EyeOff size={20} />}
-          <span className="text-xs mt-1">{pdfVisible ? 'Ein' : 'Aus'}</span>
+          <span className="text-xs mt-1">{pdfVisible ? t('pdf.on') : t('pdf.off')}</span>
         </button>
       )}
     </div>

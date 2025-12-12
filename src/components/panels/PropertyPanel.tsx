@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useSelectionStore, useElementStore } from '@/store';
+import { useSelectionStore, useElementStore, useProModeStore } from '@/store';
 import { DoorProperties } from './DoorProperties';
 import { WindowProperties } from './WindowProperties';
 import { ColumnProperties } from './ColumnProperties';
@@ -10,10 +10,14 @@ import { CounterProperties } from './CounterProperties';
 import { SpaceProperties } from './SpaceProperties';
 import { StairProperties } from './StairProperties';
 import { MultiEditPanel } from './MultiEditPanel';
+import { FireSafetyPanel } from './FireSafetyPanel';
+import { CleaningPanel } from './CleaningPanel';
 
 export function PropertyPanel() {
   const { getSelectedIds } = useSelectionStore();
   const { getElement } = useElementStore();
+  const activeModule = useProModeStore((state) => state.activeModule);
+  const isModuleEnabled = useProModeStore((state) => state.isModuleEnabled);
 
   const selectedIds = getSelectedIds();
 
@@ -142,6 +146,20 @@ export function PropertyPanel() {
       {element.type === 'stair' && element.stairData && (
         <div className="mt-4 pt-4 border-t">
           <StairProperties element={element} />
+        </div>
+      )}
+
+      {/* PRO Mode: Fire Safety Module */}
+      {activeModule === 'fire-safety' && isModuleEnabled('fire-safety') && (
+        <div className="mt-4 pt-4 border-t">
+          <FireSafetyPanel />
+        </div>
+      )}
+
+      {/* PRO Mode: Cleaning & FM Module */}
+      {activeModule === 'cleaning' && isModuleEnabled('cleaning') && (
+        <div className="mt-4 pt-4 border-t">
+          <CleaningPanel />
         </div>
       )}
     </div>
