@@ -1,6 +1,6 @@
-import { useMemo, useRef } from 'react';
-import { Mesh, Shape, ExtrudeGeometry, MeshStandardMaterial } from 'three';
-import type { BimElement } from '@/types/bim';
+import { useMemo, useRef, useEffect } from 'react';
+import { Mesh, Shape, Path, ExtrudeGeometry, MeshStandardMaterial } from 'three';
+import type { BimElement, SlabOpening } from '@/types/bim';
 import { useDragElement } from '../TransformGizmo';
 
 interface SlabMeshProps {
@@ -15,10 +15,39 @@ const SLAB_COLOR = '#d4d4d8'; // Zinc-300
 const SLAB_COLOR_SELECTED = '#93c5fd'; // Blue-300
 const GHOST_COLOR = '#9e9e9e';
 
+/**
+ * Create a Path (hole) from a slab opening outline
+ */
+function createHoleFromOpening(opening: SlabOpening): Path | null {
+  if (!opening.outline || opening.outline.length < 3) return null;
+
+  const hole = new Path();
+  const firstPoint = opening.outline[0];
+  if (!firstPoint) return null;
+
+  hole.moveTo(firstPoint.x, firstPoint.y);
+  for (let i = 1; i < opening.outline.length; i++) {
+    const pt = opening.outline[i];
+    if (pt) {
+      hole.lineTo(pt.x, pt.y);
+    }
+  }
+  hole.closePath();
+
+  return hole;
+}
+
 export function SlabMesh({ element, selected, isGhost = false, ghostOpacity = 0.25 }: SlabMeshProps) {
   const meshRef = useRef<Mesh>(null);
   const { handlers } = useDragElement(element);
   const effectiveHandlers = isGhost ? {} : handlers;
+
+  // Disable raycasting for ghost elements so they don't block clicks on active storey
+  useEffect(() => {
+    if (meshRef.current && isGhost) {
+      meshRef.current.raycast = () => {};
+    }
+  }, [isGhost]);
 
   const { slabData } = element;
 
@@ -28,7 +57,7 @@ export function SlabMesh({ element, selected, isGhost = false, ghostOpacity = 0.
       return null;
     }
 
-    const { outline, thickness, slabType } = slabData;
+    const { outline, thickness, slabType, openings } = slabData;
 
     // Create shape from outline points
     // Z-up: XY plane is horizontal, shape lies flat at Z=0
@@ -44,6 +73,16 @@ export function SlabMesh({ element, selected, isGhost = false, ghostOpacity = 0.
       }
     }
     shape.closePath();
+
+    // Add holes for openings (stair voids, shafts, etc.)
+    if (openings && openings.length > 0) {
+      for (const opening of openings) {
+        const hole = createHoleFromOpening(opening);
+        if (hole) {
+          shape.holes.push(hole);
+        }
+      }
+    }
 
     // Extrude along Z axis
     const extrudeSettings = {

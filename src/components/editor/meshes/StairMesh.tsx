@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import { Mesh, Shape, ExtrudeGeometry, MeshStandardMaterial, BufferGeometry, Euler } from 'three';
 import type { BimElement } from '@/types/bim';
 import { useDragElement } from '../TransformGizmo';
@@ -113,6 +113,13 @@ export function StairMesh({ element, selected, isGhost = false, ghostOpacity = 0
   const meshRef = useRef<Mesh>(null);
   const { handlers } = useDragElement(element);
   const effectiveHandlers = isGhost ? {} : handlers;
+
+  // Disable raycasting for ghost elements so they don't block clicks on active storey
+  useEffect(() => {
+    if (meshRef.current && isGhost) {
+      meshRef.current.raycast = () => {};
+    }
+  }, [isGhost]);
 
   const { stairData, placement } = element;
 

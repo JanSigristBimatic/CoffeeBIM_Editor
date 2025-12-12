@@ -39,6 +39,7 @@ export function EvacuationGroup() {
     const columns = getElementsByType('column');
     const furniture = getElementsByType('furniture');
     const counters = getElementsByType('counter');
+    const stairs = getElementsByType('stair');
 
     if (spaces.length === 0) {
       alert('Keine Räume gefunden! Erstellen Sie zuerst Räume (Spaces) für die Simulation.');
@@ -50,7 +51,7 @@ export function EvacuationGroup() {
       return;
     }
 
-    startSimulation(spaces, doors, walls, columns, furniture, counters);
+    startSimulation(spaces, doors, walls, columns, furniture, counters, stairs);
   };
 
   return (

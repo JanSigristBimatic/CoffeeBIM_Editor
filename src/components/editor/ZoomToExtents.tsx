@@ -23,7 +23,7 @@ function calculateElementsBounds(elements: BimElement[]): THREE.Box3 | null {
     // Get element dimensions based on type
     let minX = pos.x;
     let minY = pos.y;
-    let minZ = pos.z;
+    const minZ = pos.z;
     let maxX = pos.x;
     let maxY = pos.y;
     let maxZ = pos.z;

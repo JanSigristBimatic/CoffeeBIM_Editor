@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { ProjectInfo, SiteInfo, BuildingInfo, StoreyInfo } from '@/types/bim';
 import { DEFAULT_STOREY_HEIGHT } from '@/types/bim';
 import { createIndexedDBStorage } from '@/lib/storage';
+import { setProjectHydrated } from '@/lib/storage/hydrationTracker';
 
 interface ProjectState {
   project: ProjectInfo;
@@ -181,6 +182,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           } else {
             console.log('[CoffeeBIM] Projekt-Hydration fertig, activeStoreyId:', state?.activeStoreyId);
           }
+          // Markiere Project-Store als hydriert (auch bei Fehler, um nicht zu blockieren)
+          setProjectHydrated();
         };
       },
     }

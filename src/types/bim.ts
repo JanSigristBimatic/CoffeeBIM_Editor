@@ -371,6 +371,20 @@ export interface ColumnData {
 }
 
 /**
+ * Opening in a slab (for stairs, shafts, etc.)
+ */
+export interface SlabOpening {
+  id: string;
+  type: 'stair' | 'shaft' | 'other';
+  /** Reference to the element that created this opening (e.g., stair ID) */
+  elementId: string;
+  /** Polygon outline of the opening in world coordinates */
+  outline: Point2D[];
+  /** Description for IFC export */
+  description?: string;
+}
+
+/**
  * Slab-specific data (floors and ceilings)
  */
 export interface SlabData {
@@ -379,6 +393,8 @@ export interface SlabData {
   outline: Point2D[];
   /** Vertical offset from storey elevation (positive = up, negative = down) */
   elevationOffset?: number;
+  /** Openings in the slab (stair voids, shafts, etc.) */
+  openings?: SlabOpening[];
 }
 
 /**

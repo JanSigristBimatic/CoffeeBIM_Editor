@@ -1,9 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import type { BimElement } from '@/types/bim';
 import type { Point2D } from '@/types/geometry';
 import { offsetPath } from '@/lib/geometry/pathOffset';
 import { useDragElement } from '../TransformGizmo';
+import { useSettingsStore } from '@/store';
+import { useOpenCascade } from '@/hooks';
+import { generateCounterMeshOCCT, meshDataToGeometry } from '@/lib/opencascade';
 
 interface CounterMeshProps {
   element: BimElement;
@@ -60,9 +63,78 @@ export function CounterMesh({
   isGhost = false,
   ghostOpacity = 0.25,
 }: CounterMeshProps) {
+  const groupRef = useRef<THREE.Group>(null);
   const { handlers } = useDragElement(element);
   const effectiveHandlers = isGhost ? {} : handlers;
+
+  // OCCT integration for filleted countertops
+  const { useOpenCascade: occtEnabled } = useSettingsStore();
+  const { isReady: occtReady } = useOpenCascade();
+  const [occtGeometry, setOcctGeometry] = useState<THREE.BufferGeometry | null>(null);
+
+  // Disable raycasting for ghost elements so they don't block clicks on active storey
+  useEffect(() => {
+    if (groupRef.current && isGhost) {
+      groupRef.current.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.raycast = () => {};
+        }
+      });
+    }
+  }, [isGhost]);
+
   const counterData = element.counterData;
+
+  // Generate OCCT geometry for filleted countertop (async)
+  useEffect(() => {
+    if (!occtEnabled || !occtReady || !counterData || isGhost) {
+      setOcctGeometry(null);
+      return;
+    }
+
+    const { path, depth, height, topThickness, overhang, kickHeight, kickRecess } = counterData;
+
+    if (path.length < 2) {
+      setOcctGeometry(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const generateOcctGeometry = async () => {
+      try {
+        console.log('[CounterMesh] Generating OCCT geometry with fillets...');
+        const meshData = await generateCounterMeshOCCT({
+          path,
+          depth,
+          height,
+          topThickness,
+          overhang,
+          kickHeight,
+          kickRecess,
+          addFillets: true,
+          filletRadius: 0.005, // 5mm fillet radius
+        });
+
+        if (!cancelled && meshData) {
+          const geo = meshDataToGeometry(meshData);
+          setOcctGeometry(geo);
+          console.log('[CounterMesh] OCCT geometry with fillets generated successfully');
+        }
+      } catch (error) {
+        console.warn('[CounterMesh] OCCT geometry generation failed, using fallback:', error);
+        if (!cancelled) {
+          setOcctGeometry(null);
+        }
+      }
+    };
+
+    generateOcctGeometry();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [occtEnabled, occtReady, counterData, isGhost]);
 
   const meshes = useMemo(() => {
     if (!counterData) return null;
@@ -149,7 +221,7 @@ export function CounterMesh({
     return meshConfigs;
   }, [counterData]);
 
-  if (!meshes) return null;
+  if (!meshes && !occtGeometry) return null;
 
   // Calculate color based on selection/hover/ghost state
   const getColor = (baseColor: string): string => {
@@ -162,8 +234,34 @@ export function CounterMesh({
   // Get storey elevation from element placement
   const baseZ = element.placement.position.z;
 
+  // Use OCCT geometry when available (single mesh with filleted edges)
+  if (occtGeometry) {
+    return (
+      <group ref={groupRef} {...effectiveHandlers} renderOrder={isGhost ? -1 : 0}>
+        <mesh
+          geometry={occtGeometry}
+          position={[0, 0, baseZ]}
+          castShadow={!isGhost}
+          receiveShadow={!isGhost}
+        >
+          <meshStandardMaterial
+            color={getColor('#374151')}
+            roughness={isGhost ? 0.9 : 0.7}
+            metalness={isGhost ? 0.0 : 0.1}
+            transparent={isGhost}
+            opacity={isGhost ? ghostOpacity : 1}
+            depthWrite={!isGhost}
+          />
+        </mesh>
+      </group>
+    );
+  }
+
+  // Fallback: traditional multi-mesh rendering
+  if (!meshes) return null;
+
   return (
-    <group {...effectiveHandlers} renderOrder={isGhost ? -1 : 0}>
+    <group ref={groupRef} {...effectiveHandlers} renderOrder={isGhost ? -1 : 0}>
       {meshes.map((config, index) => (
         <mesh
           key={index}

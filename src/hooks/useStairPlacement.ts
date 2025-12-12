@@ -1,7 +1,12 @@
 import { useCallback, useMemo } from 'react';
 import { ThreeEvent } from '@react-three/fiber';
 import { useToolStore, useProjectStore, useElementStore } from '@/store';
-import { createStair, calculateSteps } from '@/bim/elements/Stair';
+import { createStair, calculateSteps, getStairOpeningOutline } from '@/bim/elements/Stair';
+import {
+  createSlabOpeningFromStair,
+  addOpeningToSlab,
+  findSlabsForStairOpening,
+} from '@/bim/elements/Slab';
 import { useSnap } from './useSnap';
 import type { Point2D } from '@/types/geometry';
 
@@ -20,7 +25,7 @@ export function useStairPlacement() {
     setCursorPosition,
   } = useToolStore();
 
-  const { addElement } = useElementStore();
+  const { addElement, getAllElements, updateElement } = useElementStore();
   const { activeStoreyId, storeys } = useProjectStore();
 
   // Use centralized snap hook
@@ -84,6 +89,7 @@ export function useStairPlacement() {
   /**
    * Create a stair at the specified position and direction
    * Handles both upward and downward stairs, or manual height without target storey
+   * Also creates slab opening in the target storey if createOpening is true
    */
   const createStairElement = useCallback(
     (startPoint: Point2D, rotation: number) => {
@@ -111,13 +117,44 @@ export function useStairPlacement() {
         });
 
         addElement(stair);
+
+        // Create slab opening in the target (top) storey if enabled
+        if (stairPlacement.params.createOpening && topStoreyId) {
+          const openingOutline = getStairOpeningOutline(stair);
+          if (openingOutline.length >= 3) {
+            // Find slabs in the top storey that need openings
+            const allElements = getAllElements();
+            const targetSlabs = findSlabsForStairOpening(
+              allElements,
+              topStoreyId,
+              openingOutline
+            );
+
+            // Add opening to each slab that contains the stair
+            for (const slab of targetSlabs) {
+              const slabOpening = createSlabOpeningFromStair(stair, openingOutline);
+              const slabUpdates = addOpeningToSlab(slab, slabOpening);
+              if (Object.keys(slabUpdates).length > 0) {
+                updateElement(slab.id, slabUpdates);
+              }
+            }
+
+            if (targetSlabs.length === 0) {
+              console.info(
+                'No floor slab found in target storey for stair opening. ' +
+                'Create a floor slab first, or add the opening manually.'
+              );
+            }
+          }
+        }
+
         return true;
       } catch (error) {
         console.warn('Could not create stair:', error);
         return false;
       }
     },
-    [activeStoreyId, activeStorey, targetStorey, isGoingUp, totalRise, stairPlacement.params, addElement]
+    [activeStoreyId, activeStorey, targetStorey, isGoingUp, totalRise, stairPlacement.params, addElement, getAllElements, updateElement]
   );
 
   /**

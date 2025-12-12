@@ -1,5 +1,5 @@
-import { useMemo, useRef } from 'react';
-import { BoxGeometry, MeshStandardMaterial, Group, Euler } from 'three';
+import { useMemo, useRef, useEffect } from 'react';
+import { BoxGeometry, MeshStandardMaterial, Group, Euler, Mesh } from 'three';
 import { useElementStore } from '@/store';
 import type { BimElement } from '@/types/bim';
 import { DoorSwingArc } from './DoorSwingArc';
@@ -27,6 +27,17 @@ export function DoorMesh({ element, selected, isGhost = false, ghostOpacity = 0.
   const { getElement, elements } = useElementStore();
   const { handlers } = useDragElement(element);
   const effectiveHandlers = isGhost ? {} : handlers;
+
+  // Disable raycasting for ghost elements so they don't block clicks on active storey
+  useEffect(() => {
+    if (groupRef.current && isGhost) {
+      groupRef.current.traverse((child) => {
+        if (child instanceof Mesh) {
+          child.raycast = () => {};
+        }
+      });
+    }
+  }, [isGhost]);
 
   const { doorData } = element;
 

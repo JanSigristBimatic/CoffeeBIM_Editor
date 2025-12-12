@@ -1,5 +1,5 @@
-import { useMemo, useRef } from 'react';
-import { BoxGeometry, MeshStandardMaterial, MeshPhysicalMaterial, Group, Euler } from 'three';
+import { useMemo, useRef, useEffect } from 'react';
+import { BoxGeometry, MeshStandardMaterial, MeshPhysicalMaterial, Group, Euler, Mesh } from 'three';
 import { useElementStore } from '@/store';
 import type { BimElement } from '@/types/bim';
 import { useDragElement } from '../TransformGizmo';
@@ -25,6 +25,17 @@ export function WindowMesh({ element, selected, isGhost = false, ghostOpacity = 
   const { getElement, elements } = useElementStore();
   const { handlers } = useDragElement(element);
   const effectiveHandlers = isGhost ? {} : handlers;
+
+  // Disable raycasting for ghost elements so they don't block clicks on active storey
+  useEffect(() => {
+    if (groupRef.current && isGhost) {
+      groupRef.current.traverse((child) => {
+        if (child instanceof Mesh) {
+          child.raycast = () => {};
+        }
+      });
+    }
+  }, [isGhost]);
 
   const { windowData } = element;
 

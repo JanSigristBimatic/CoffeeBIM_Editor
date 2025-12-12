@@ -330,16 +330,13 @@ function calculateTrueMiterExtensions(
   // Find intersection points by intersecting corresponding edges
   // Outer corner: where both outer edges meet
   // Inner corner: where both inner edges meet
-  let outerIntersection: Point2D | null;
-  let innerIntersection: Point2D | null;
-
   const aOuterEdge = aOuterIsRight ? rightEdgeA : leftEdgeA;
   const aInnerEdge = aOuterIsRight ? leftEdgeA : rightEdgeA;
   const bOuterEdge = bOuterIsRight ? rightEdgeB : leftEdgeB;
   const bInnerEdge = bOuterIsRight ? leftEdgeB : rightEdgeB;
 
-  outerIntersection = lineLineIntersection(aOuterEdge, bOuterEdge);
-  innerIntersection = lineLineIntersection(aInnerEdge, bInnerEdge);
+  const outerIntersection = lineLineIntersection(aOuterEdge, bOuterEdge);
+  const innerIntersection = lineLineIntersection(aInnerEdge, bInnerEdge);
 
   // Helper: calculate signed extension from edge point to intersection
   // Positive = extend in wall direction, Negative = shorten

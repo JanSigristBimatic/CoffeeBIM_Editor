@@ -1,5 +1,12 @@
 export { createWall, calculateWallLength, DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT } from './Wall';
-export { createSlab, DEFAULT_SLAB_THICKNESS } from './Slab';
+export {
+  createSlab,
+  createSlabOpeningFromStair,
+  addOpeningToSlab,
+  removeOpeningFromSlab,
+  findSlabsForStairOpening,
+  DEFAULT_SLAB_THICKNESS,
+} from './Slab';
 export {
   createDoor,
   createOpeningFromDoor,

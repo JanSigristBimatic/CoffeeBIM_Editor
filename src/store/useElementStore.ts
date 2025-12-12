@@ -5,6 +5,7 @@ import type { BimElement, ElementType } from '@/types/bim';
 import { updateOpeningFromElement, getHostWallId } from '@/bim/elements';
 import { createIndexedDBStorage } from '@/lib/storage';
 import { createLogger } from '@/lib/utils/logger';
+import { setElementsHydrated } from '@/lib/storage/hydrationTracker';
 
 const logger = createLogger('CoffeeBIM');
 
@@ -264,6 +265,8 @@ export const useElementStore = create<ElementState & ElementActions>()(
           } else {
             logger.log('Hydration fertig, Elemente:', state?.elements?.size ?? 0);
           }
+          // Markiere Element-Store als hydriert (auch bei Fehler, um nicht zu blockieren)
+          setElementsHydrated();
         };
       },
     }

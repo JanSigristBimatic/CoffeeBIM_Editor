@@ -489,6 +489,17 @@ export function FurnitureMesh({ element, selected, isGhost = false, ghostOpacity
   const { handlers } = useDragElement(element);
   const effectiveHandlers = isGhost ? {} : handlers;
 
+  // Disable raycasting for ghost elements so they don't block clicks on active storey
+  useEffect(() => {
+    if (groupRef.current && isGhost) {
+      groupRef.current.traverse((child) => {
+        if (child instanceof Mesh) {
+          child.raycast = () => {};
+        }
+      });
+    }
+  }, [isGhost]);
+
   const { furnitureData, placement } = element;
 
   // Calculate rotation from quaternion (Z-up: rotate around Z axis)

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { BimElement, SlabData } from '@/types/bim';
+import type { BimElement, SlabData, SlabOpening } from '@/types/bim';
 import type { Point2D } from '@/types/geometry';
 
 export const DEFAULT_SLAB_THICKNESS = 0.25; // 25cm
@@ -138,4 +138,130 @@ function calculateArea(points: Point2D[]): number {
   }
 
   return Math.abs(area / 2);
+}
+
+/**
+ * Create a slab opening from a stair element
+ * Uses the stair's opening outline calculation
+ */
+export function createSlabOpeningFromStair(
+  stair: BimElement,
+  openingOutline: Point2D[]
+): SlabOpening {
+  return {
+    id: uuidv4(),
+    type: 'stair',
+    elementId: stair.id,
+    outline: openingOutline.map((p) => ({ ...p })),
+    description: `Treppenöffnung für ${stair.name}`,
+  };
+}
+
+/**
+ * Add an opening to a slab
+ * Returns updated slab data
+ */
+export function addOpeningToSlab(
+  slab: BimElement,
+  opening: SlabOpening
+): Partial<BimElement> {
+  if (!slab.slabData) return {};
+
+  const existingOpenings = slab.slabData.openings ?? [];
+
+  // Check if opening for this element already exists
+  const existingIndex = existingOpenings.findIndex(
+    (o) => o.elementId === opening.elementId
+  );
+
+  let updatedOpenings: SlabOpening[];
+  if (existingIndex >= 0) {
+    // Update existing opening
+    updatedOpenings = [...existingOpenings];
+    updatedOpenings[existingIndex] = opening;
+  } else {
+    // Add new opening
+    updatedOpenings = [...existingOpenings, opening];
+  }
+
+  return {
+    slabData: {
+      ...slab.slabData,
+      openings: updatedOpenings,
+    },
+  };
+}
+
+/**
+ * Remove an opening from a slab by element ID
+ * Returns updated slab data
+ */
+export function removeOpeningFromSlab(
+  slab: BimElement,
+  elementId: string
+): Partial<BimElement> {
+  if (!slab.slabData?.openings) return {};
+
+  const updatedOpenings = slab.slabData.openings.filter(
+    (o) => o.elementId !== elementId
+  );
+
+  return {
+    slabData: {
+      ...slab.slabData,
+      openings: updatedOpenings.length > 0 ? updatedOpenings : undefined,
+    },
+  };
+}
+
+/**
+ * Check if a point is inside a polygon (ray casting algorithm)
+ */
+export function isPointInPolygon(point: Point2D, polygon: Point2D[]): boolean {
+  let inside = false;
+  const n = polygon.length;
+
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const pi = polygon[i];
+    const pj = polygon[j];
+    if (!pi || !pj) continue;
+
+    if (
+      pi.y > point.y !== pj.y > point.y &&
+      point.x < ((pj.x - pi.x) * (point.y - pi.y)) / (pj.y - pi.y) + pi.x
+    ) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+/**
+ * Find slabs in a storey that contain the stair opening
+ * Returns slabs whose outline contains the stair opening centroid
+ */
+export function findSlabsForStairOpening(
+  slabs: BimElement[],
+  storeyId: string,
+  openingOutline: Point2D[]
+): BimElement[] {
+  // Calculate centroid of opening
+  const centroid = openingOutline.reduce(
+    (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+    { x: 0, y: 0 }
+  );
+  centroid.x /= openingOutline.length;
+  centroid.y /= openingOutline.length;
+
+  // Find slabs in target storey that contain the opening centroid
+  return slabs.filter((slab) => {
+    if (slab.type !== 'slab' || slab.parentId !== storeyId) return false;
+    if (!slab.slabData?.outline) return false;
+
+    // Only floor slabs need stair openings (ceiling openings are handled differently)
+    if (slab.slabData.slabType !== 'floor') return false;
+
+    return isPointInPolygon(centroid, slab.slabData.outline);
+  });
 }

@@ -42,7 +42,8 @@ function AgentMesh({ agent, geometry }: AgentMeshProps) {
 
     // Apply agent rotation around Z axis (Z-up coordinate system)
     // The model is Y-up, so we rotate -90° around X to make it Z-up
-    groupRef.current.rotation.set(0, 0, agent.rotation);
+    // Add 90° offset to align model's forward direction with movement direction
+    groupRef.current.rotation.set(0, 0, agent.rotation + Math.PI / 2);
   });
 
   // Don't render if agent has exited
@@ -53,7 +54,7 @@ function AgentMesh({ agent, geometry }: AgentMeshProps) {
     return (
       <group
         position={[agent.position.x, agent.position.y, agent.position.z]}
-        rotation={[0, 0, agent.rotation]}
+        rotation={[0, 0, agent.rotation + Math.PI / 2]}
       >
         {/* Capsule standing upright (Z-up) */}
         <mesh position={[0, 0, 0.9]} rotation={[Math.PI / 2, 0, 0]}>
@@ -216,7 +217,7 @@ export function EvacuationControlPanel() {
   // For now, this is just the UI controls
 
   return (
-    <div className="flex flex-col gap-2 p-2 bg-background border rounded-lg shadow-lg">
+    <div className="flex flex-col gap-2 p-2 border rounded-lg shadow-lg bg-background">
       <div className="text-sm font-semibold">Fluchtsimulation</div>
 
       {/* Settings */}
@@ -263,7 +264,7 @@ export function EvacuationControlPanel() {
               // Note: startSimulation needs spaces, doors, walls from parent
               // This button is a placeholder - actual trigger from toolbar
             }}
-            className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
+            className="px-2 py-1 text-xs text-white bg-green-500 rounded hover:bg-green-600"
             disabled
           >
             Start (via Toolbar)
@@ -271,7 +272,7 @@ export function EvacuationControlPanel() {
         ) : (
           <button
             onClick={stopSimulation}
-            className="px-2 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600"
+            className="px-2 py-1 text-xs text-white bg-yellow-500 rounded hover:bg-yellow-600"
           >
             Pause
           </button>
@@ -279,7 +280,7 @@ export function EvacuationControlPanel() {
 
         <button
           onClick={reset}
-          className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+          className="px-2 py-1 text-xs text-white bg-red-500 rounded hover:bg-red-600"
         >
           Reset
         </button>

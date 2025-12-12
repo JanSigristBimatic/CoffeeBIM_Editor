@@ -3,10 +3,16 @@ import { Stage, Layer, Line, Rect, Circle, Arc, Text, Group } from 'react-konva'
 import type { Stage as StageType } from 'konva/lib/Stage';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useElementStore, useViewStore, useSelectionStore, useProjectStore, useToolStore } from '@/store';
+import { useEvacuationStore } from '@/store/useEvacuationStore';
 import type { BimElement } from '@/types/bim';
 import { DEFAULT_WALL_THICKNESS, DEFAULT_WALL_HEIGHT, DEFAULT_WALL_ALIGNMENT, DEFAULT_COUNTER_DEPTH, DEFAULT_COUNTER_HEIGHT } from '@/types/bim';
 import { createColumn } from '@/bim/elements/Column';
-import { createStair, calculateSteps } from '@/bim/elements/Stair';
+import { createStair, calculateSteps, getStairOpeningOutline } from '@/bim/elements/Stair';
+import {
+  createSlabOpeningFromStair,
+  addOpeningToSlab,
+  findSlabsForStairOpening,
+} from '@/bim/elements/Slab';
 import { createDoor, createOpeningFromDoor } from '@/bim/elements/Door';
 import { createWindow, createOpeningFromWindow } from '@/bim/elements/Window';
 import { getPositionOnWall, calculateWallLength } from '@/bim/elements/Wall';
@@ -153,6 +159,9 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     assetPlacement,
     setAssetPreview,
   } = useToolStore();
+
+  // Evacuation store for green route visualization
+  const { evacuationRoutes, isRunning: isEvacuationRunning } = useEvacuationStore();
 
   // Local state for cursor position in world coordinates
   const [cursorWorldPos, setCursorWorldPos] = useState<Point2D | null>(null);
@@ -1157,6 +1166,37 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
           });
 
           addElement(stair);
+
+          // Create slab opening in the target (top) storey if enabled
+          if (stairPlacement.params.createOpening && topStoreyId) {
+            const openingOutline = getStairOpeningOutline(stair);
+            if (openingOutline.length >= 3) {
+              // Find slabs in the top storey that need openings
+              const allElements = getAllElements();
+              const targetSlabs = findSlabsForStairOpening(
+                allElements,
+                topStoreyId,
+                openingOutline
+              );
+
+              // Add opening to each slab that contains the stair
+              for (const slab of targetSlabs) {
+                const slabOpening = createSlabOpeningFromStair(stair, openingOutline);
+                const slabUpdates = addOpeningToSlab(slab, slabOpening);
+                if (Object.keys(slabUpdates).length > 0) {
+                  updateElement(slab.id, slabUpdates);
+                }
+              }
+
+              if (targetSlabs.length === 0) {
+                console.info(
+                  'No floor slab found in target storey for stair opening. ' +
+                  'Create a floor slab first, or add the opening manually.'
+                );
+              }
+            }
+          }
+
           console.log('Stair placed with height:', totalRise, 'm');
           resetStairPlacement();
         } catch (error) {
@@ -1165,7 +1205,7 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
         }
       }
     },
-    [stairPlacement, activeStoreyId, activeStorey, storeys, setStairStartPoint, setStairPreviewEndPoint, resetStairPlacement, addElement]
+    [stairPlacement, activeStoreyId, activeStorey, storeys, setStairStartPoint, setStairPreviewEndPoint, resetStairPlacement, addElement, getAllElements, updateElement]
   );
 
   // Handle door tool click - click on wall to place door
@@ -2555,6 +2595,104 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
     return <>{dimensionElements}</>;
   };
 
+  // Render evacuation routes (green lines from farthest corner to exit)
+  const renderEvacuationRoutes = () => {
+    if (!evacuationRoutes || evacuationRoutes.size === 0) return null;
+
+    const routeElements: JSX.Element[] = [];
+
+    evacuationRoutes.forEach((route, spaceId) => {
+      // Only render routes for current storey
+      if (activeStoreyId && route.storeyId !== activeStoreyId) return;
+
+      const { farthestCorner, pathPoints, totalDistance } = route;
+
+      // Skip if no valid path
+      if (pathPoints.length < 2) return;
+
+      // Convert path points to flat array for Konva Line [x1, y1, x2, y2, ...]
+      const linePoints: number[] = [];
+      pathPoints.forEach((p) => {
+        linePoints.push(worldToScreen(p.x, p.y).x);
+        linePoints.push(worldToScreen(p.x, p.y).y);
+      });
+
+      // Green evacuation line
+      routeElements.push(
+        <Line
+          key={`evac-line-${spaceId}`}
+          points={linePoints}
+          stroke="#00FF00"
+          strokeWidth={2.5 / cad2dZoom}
+          lineCap="round"
+          lineJoin="round"
+          dash={[8 / cad2dZoom, 4 / cad2dZoom]}
+          opacity={isEvacuationRunning ? 1 : 0.7}
+        />
+      );
+
+      // Red circle at farthest corner (spawn point)
+      const cornerScreen = worldToScreen(farthestCorner.x, farthestCorner.y);
+      routeElements.push(
+        <Circle
+          key={`evac-corner-${spaceId}`}
+          x={cornerScreen.x}
+          y={cornerScreen.y}
+          radius={6 / cad2dZoom}
+          fill="#FF0000"
+          stroke="#FFFFFF"
+          strokeWidth={1.5 / cad2dZoom}
+        />
+      );
+
+      // Green circle at exit point
+      const exitPoint = pathPoints[pathPoints.length - 1];
+      if (exitPoint) {
+        const exitScreen = worldToScreen(exitPoint.x, exitPoint.y);
+        routeElements.push(
+          <Circle
+            key={`evac-exit-${spaceId}`}
+            x={exitScreen.x}
+            y={exitScreen.y}
+            radius={6 / cad2dZoom}
+            fill="#00FF00"
+            stroke="#FFFFFF"
+            strokeWidth={1.5 / cad2dZoom}
+          />
+        );
+      }
+
+      // Distance label (show at midpoint of path)
+      const midIdx = Math.floor(pathPoints.length / 2);
+      const midPoint = pathPoints[midIdx];
+      if (midPoint && totalDistance > 0) {
+        const midScreen = worldToScreen(midPoint.x, midPoint.y);
+        routeElements.push(
+          <Group key={`evac-label-${spaceId}`}>
+            <Rect
+              x={midScreen.x + 8 / cad2dZoom}
+              y={midScreen.y - 10 / cad2dZoom}
+              width={55 / cad2dZoom}
+              height={16 / cad2dZoom}
+              fill="rgba(0, 0, 0, 0.7)"
+              cornerRadius={3 / cad2dZoom}
+            />
+            <Text
+              x={midScreen.x + 12 / cad2dZoom}
+              y={midScreen.y - 7 / cad2dZoom}
+              text={`${totalDistance.toFixed(1)}m`}
+              fontSize={11 / cad2dZoom}
+              fill="#00FF00"
+              fontStyle="bold"
+            />
+          </Group>
+        );
+      }
+    });
+
+    return <>{routeElements}</>;
+  };
+
   // Render all elements
   const renderElements = () => {
     const rendered: JSX.Element[] = [];
@@ -3616,6 +3754,9 @@ export function Canvas2D({ width: propWidth, height: propHeight }: Canvas2DProps
 
         {/* Elements Layer */}
         <Layer>{renderElements()}</Layer>
+
+        {/* Evacuation Routes Layer - green lines from farthest corner to exit */}
+        <Layer listening={false}>{renderEvacuationRoutes()}</Layer>
 
         {/* Preview Layer - for active tool previews */}
         <Layer listening={false}>

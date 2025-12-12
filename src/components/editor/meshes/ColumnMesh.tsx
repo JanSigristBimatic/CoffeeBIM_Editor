@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import { Mesh, Shape, ExtrudeGeometry, MeshStandardMaterial, CylinderGeometry } from 'three';
 import type { BimElement } from '@/types/bim';
 import { useDragElement } from '../TransformGizmo';
@@ -19,6 +19,13 @@ export function ColumnMesh({ element, selected, isGhost = false, ghostOpacity = 
   const meshRef = useRef<Mesh>(null);
   const { handlers } = useDragElement(element);
   const effectiveHandlers = isGhost ? {} : handlers;
+
+  // Disable raycasting for ghost elements so they don't block clicks on active storey
+  useEffect(() => {
+    if (meshRef.current && isGhost) {
+      meshRef.current.raycast = () => {};
+    }
+  }, [isGhost]);
 
   const { columnData, placement } = element;
 

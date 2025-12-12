@@ -26,6 +26,7 @@ export class IfcExporter {
   private furnitureIds: Map<string, number> = new Map();
   private spaceIds: Map<string, number> = new Map();
   private stairIds: Map<string, number> = new Map();
+  private slabIds: Map<string, number> = new Map();
 
   constructor() {
     this.ifcApi = new WebIFC.IfcAPI();
@@ -65,6 +66,7 @@ export class IfcExporter {
     this.furnitureIds.clear();
     this.spaceIds.clear();
     this.stairIds.clear();
+    this.slabIds.clear();
 
     // Create IFC hierarchy
     this.createOwnerHistory();
@@ -939,7 +941,7 @@ export class IfcExporter {
   private createSlab(slab: BimElement, storeys: StoreyInfo[]): void {
     if (!slab.slabData) return;
 
-    const { thickness, outline, slabType, elevationOffset = 0 } = slab.slabData;
+    const { thickness, outline, slabType, elevationOffset = 0, openings } = slab.slabData;
 
     // Find storey
     const storey = storeys.find((s) => s.id === slab.parentId);
@@ -990,13 +992,88 @@ export class IfcExporter {
       PredefinedType: { type: 3, value: predefinedType },
     });
 
+    // Store slab ID for relationships
+    this.slabIds.set(slab.id, slabIfcId);
+
     // Create property sets
     this.createPropertySets(slab, slabIfcId);
+
+    // Create openings for stair voids, shafts, etc.
+    if (openings && openings.length > 0) {
+      for (const opening of openings) {
+        this.createSlabOpening(opening, slabIfcId, placementZ, thickness);
+      }
+    }
 
     // Assign to storey
     if (storeyIfcId) {
       this.createContainedInSpatialStructure(slabIfcId, storeyIfcId);
     }
+  }
+
+  /**
+   * Create an opening in a slab (for stairs, shafts, etc.)
+   */
+  private createSlabOpening(
+    opening: { id: string; outline: { x: number; y: number }[]; description?: string },
+    slabIfcId: number,
+    slabZ: number,
+    slabThickness: number
+  ): void {
+    if (!opening.outline || opening.outline.length < 3) return;
+
+    // Create placement at slab level
+    const openingPlacementId = this.createLocalPlacement(null, 0, 0, slabZ);
+
+    // Create arbitrary profile from opening outline
+    const openingProfileId = this.createArbitraryProfile(opening.outline);
+
+    // Create extruded solid (extrude through entire slab thickness + margin)
+    const openingSolidId = this.createExtrudedSolid(openingProfileId, slabThickness + 0.1);
+
+    // Create shape representation
+    const openingShapeRepId = this.createShapeRepresentation(openingSolidId, 'Body', 'SweptSolid');
+
+    // Create product representation
+    const openingProductRepId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: openingProductRepId,
+      type: WebIFC.IFCPRODUCTDEFINITIONSHAPE,
+      Name: null,
+      Description: null,
+      Representations: [{ type: 5, value: openingShapeRepId }],
+    });
+
+    // Create opening element
+    const openingId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: openingId,
+      type: WebIFC.IFCOPENINGELEMENT,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: { type: 1, value: opening.description ?? `Slab Opening ${opening.id.slice(0, 8)}` },
+      Description: null,
+      ObjectType: null,
+      ObjectPlacement: { type: 5, value: openingPlacementId },
+      Representation: { type: 5, value: openingProductRepId },
+      Tag: null,
+      PredefinedType: { type: 3, value: 'OPENING' },
+    });
+
+    this.openingIds.set(opening.id, openingId);
+
+    // Create IfcRelVoidsElement (slab has opening)
+    const relVoidsId = this.getNextId();
+    this.ifcApi.WriteLine(this.modelId, {
+      expressID: relVoidsId,
+      type: WebIFC.IFCRELVOIDSELEMENT,
+      GlobalId: { type: 1, value: this.generateGuid() },
+      OwnerHistory: null,
+      Name: null,
+      Description: null,
+      RelatingBuildingElement: { type: 5, value: slabIfcId },
+      RelatedOpeningElement: { type: 5, value: openingId },
+    });
   }
 
   private createColumn(column: BimElement, storeys: StoreyInfo[]): void {

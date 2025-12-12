@@ -1,10 +1,12 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import { Mesh, Shape, Path, ExtrudeGeometry, MeshStandardMaterial, Euler, BufferGeometry, Float32BufferAttribute } from 'three';
 import type { BimElement, Opening, WallAlignmentSide } from '@/types/bim';
 import { useDragElement } from '../TransformGizmo';
 import { calculateWallGeometry, analyzeWallCorners } from '@/lib/geometry';
 import type { WallEndExtensions } from '@/lib/geometry';
-import { useElementStore } from '@/store';
+import { useElementStore, useSettingsStore } from '@/store';
+import { useOpenCascade } from '@/hooks';
+import { generateWallMeshOCCT, meshDataToGeometry } from '@/lib/opencascade';
 
 /**
  * Calculate profile Z-offset based on alignment side
@@ -190,8 +192,20 @@ export function WallMesh({ element, selected, isGhost = false, ghostOpacity = 0.
   const { handlers } = useDragElement(element);
   const { elements } = useElementStore();
 
+  // OCCT integration
+  const { useOpenCascade: occtEnabled } = useSettingsStore();
+  const { isReady: occtReady } = useOpenCascade();
+  const [occtGeometry, setOcctGeometry] = useState<BufferGeometry | null>(null);
+
   // Disable interaction for ghost elements
   const effectiveHandlers = isGhost ? {} : handlers;
+
+  // Disable raycasting for ghost elements so they don't block clicks on active storey
+  useEffect(() => {
+    if (meshRef.current && isGhost) {
+      meshRef.current.raycast = () => {};
+    }
+  }, [isGhost]);
 
   const { wallData } = element;
 
@@ -212,8 +226,65 @@ export function WallMesh({ element, selected, isGhost = false, ghostOpacity = 0.
     return analyzeWallCorners(element, allWalls);
   }, [element, allWalls, isGhost]);
 
-  // Create geometry from wall data
-  const geometry = useMemo(() => {
+  // Generate OCCT geometry for walls with openings (async)
+  useEffect(() => {
+    if (!occtEnabled || !occtReady || !wallData || isGhost) {
+      setOcctGeometry(null);
+      return;
+    }
+
+    const { openings, thickness, height, alignmentSide } = wallData;
+    const hasOpenings = openings && openings.length > 0;
+
+    // Only use OCCT for walls with openings (that's where boolean ops help)
+    if (!hasOpenings) {
+      setOcctGeometry(null);
+      return;
+    }
+
+    const wallGeo = calculateWallGeometry(wallData.startPoint, wallData.endPoint);
+    if (wallGeo.length < 0.01) {
+      setOcctGeometry(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const generateOcctGeometry = async () => {
+      try {
+        console.log('[WallMesh] Generating OCCT geometry for wall with openings...');
+        const meshData = await generateWallMeshOCCT({
+          length: wallGeo.length,
+          height,
+          thickness,
+          alignmentSide,
+          openings,
+          startExtensions: cornerAnalysis.startExtensions,
+          endExtensions: cornerAnalysis.endExtensions,
+        });
+
+        if (!cancelled && meshData) {
+          const geo = meshDataToGeometry(meshData);
+          setOcctGeometry(geo);
+          console.log('[WallMesh] OCCT geometry generated successfully');
+        }
+      } catch (error) {
+        console.warn('[WallMesh] OCCT geometry generation failed, using fallback:', error);
+        if (!cancelled) {
+          setOcctGeometry(null);
+        }
+      }
+    };
+
+    generateOcctGeometry();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [occtEnabled, occtReady, wallData, cornerAnalysis, isGhost]);
+
+  // Create geometry from wall data (fallback when OCCT not available)
+  const fallbackGeometry = useMemo(() => {
     if (!wallData) return null;
 
     const { startPoint, endPoint, thickness, height, openings, alignmentSide } = wallData;
@@ -283,6 +354,9 @@ export function WallMesh({ element, selected, isGhost = false, ghostOpacity = 0.
       cornerAnalysis.endExtensions
     );
   }, [wallData, cornerAnalysis]);
+
+  // Use OCCT geometry when available, otherwise fall back to traditional geometry
+  const geometry = occtGeometry || fallbackGeometry;
 
   // Create material
   const material = useMemo(() => {
